@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import subprocess
 import time
@@ -166,11 +167,19 @@ OVERLAY_CONTROLS_SCRIPT = """
 
 
 class JobApplicationService:
-    def __init__(self, settings: Settings, profile: Dict[str, str], answers: Dict[str, Dict[str, str]]) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        profile: Dict[str, str],
+        answers: Dict[str, Dict[str, str]],
+        force_apply: bool = False,
+    ) -> None:
         self.settings = settings
         self.profile = profile
         self.first_name, self.last_name = self._split_name(profile.get("full_name", ""))
         self.max_experience_years = int(profile.get("max_target_experience_years", 4) or 4)
+        env_force = os.getenv("JOB_BOT_FORCE_APPLY", "").strip().lower() in {"1", "true", "yes", "on"}
+        self.force_apply = bool(force_apply or env_force)
         self.current_provider = ""
         self.exact_answers = {normalize_text(key): value for key, value in answers.get("exact", {}).items()}
         self.contains_answers = {normalize_text(key): value for key, value in answers.get("contains", {}).items()}
@@ -467,15 +476,16 @@ class JobApplicationService:
                 ],
             )
             description = " ".join(part for part in (top_card_text, description or job.description) if part)
-            fit = analyze_job_fit(
-                title=title or job.title,
-                description=description,
-                require_contract=False,  # LinkedIn URL already filters by contract job type (f_JT=C)
-                max_experience_years=self.max_experience_years,
-            )
-            if not fit["eligible"]:
-                reason = ", ".join(str(item) for item in fit["reasons"][:2])
-                return self._finalize(working_page, job, "review_required", f"Skipped by criteria: {reason}", submit_mode)
+            if not self.force_apply:
+                fit = analyze_job_fit(
+                    title=title or job.title,
+                    description=description,
+                    require_contract=False,  # LinkedIn URL already filters by contract job type (f_JT=C)
+                    max_experience_years=self.max_experience_years,
+                )
+                if not fit["eligible"]:
+                    reason = ", ".join(str(item) for item in fit["reasons"][:2])
+                    return self._finalize(working_page, job, "review_required", f"Skipped by criteria: {reason}", submit_mode)
 
             working_page.evaluate("window.scrollTo(0, 0)")
             working_page.wait_for_timeout(300)
@@ -667,22 +677,23 @@ class JobApplicationService:
 
                 title = job.title or page_snapshot.title
                 description = " ".join(part for part in (page_snapshot.visible_text_excerpt, job.description) if part)
-                fit = analyze_job_fit(
-                    title=title,
-                    description=description,
-                    require_contract=False,  # LinkedIn URL already filters by contract job type
-                    max_experience_years=self.max_experience_years,
-                )
-                if not fit["eligible"]:
-                    reason = ", ".join(str(item) for item in fit["reasons"][:2])
-                    return self._bridge_finalize(
-                        job,
-                        "review_required",
-                        f"Skipped by criteria: {reason}",
-                        submit_mode,
-                        driver=driver,
-                        snapshot=page_snapshot,
+                if not self.force_apply:
+                    fit = analyze_job_fit(
+                        title=title,
+                        description=description,
+                        require_contract=False,  # LinkedIn URL already filters by contract job type
+                        max_experience_years=self.max_experience_years,
                     )
+                    if not fit["eligible"]:
+                        reason = ", ".join(str(item) for item in fit["reasons"][:2])
+                        return self._bridge_finalize(
+                            job,
+                            "review_required",
+                            f"Skipped by criteria: {reason}",
+                            submit_mode,
+                            driver=driver,
+                            snapshot=page_snapshot,
+                        )
 
                 dialog_snapshot = driver.open_easy_apply(tab.id)
                 if driver.detect_success_state(dialog_snapshot):
@@ -1897,6 +1908,17 @@ class JobApplicationService:
             return True
         if normalized_answer in no_values and (option_text.startswith("no") or "decline" in option_text or "prefer not" in option_text):
             return True
+        # Resume filename matching: allow fuzzy token-prefix matches so
+        # "Deep resume.pdf" can match "DeepAmanGanta_Resume.pdf".
+        if "resume" in normalized_answer and "resume" in option_text:
+            answer_tokens = [t for t in normalized_answer.split() if t not in {"resume", "cv", "pdf"}]
+            option_tokens = [t for t in option_text.split() if t not in {"resume", "cv", "pdf"}]
+            if not answer_tokens:
+                return True
+            for a in answer_tokens:
+                for o in option_tokens:
+                    if o.startswith(a) or a.startswith(o):
+                        return True
         synonym_map = {
             "no i am not a veteran": {"not a protected veteran", "i am not a protected veteran", "no", "not veteran"},
             "heterosexual straight": {"straight", "heterosexual"},

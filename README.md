@@ -295,6 +295,8 @@ Options:
 
 When a post contains an email address, the scanner prints a ready-to-send email draft. **Use Gmail forward** (not new draft) to automatically carry over the attached resume — search Gmail for a prior sent email with your resume attached, then forward it to the new lead's email with the updated subject and body.
 
+The `linkedin-posts` command prints a long-form outreach template populated from your `candidate_profile.json` so all emails stay consistent.
+
 ---
 
 ## Chrome Bridge

@@ -76,6 +76,11 @@ def main() -> None:
     apply_parser.add_argument("--submit-mode", choices=["review", "auto"], default=None)
     apply_parser.add_argument("--all", action="store_true", help="Apply to all eligible jobs instead of just one.")
     apply_parser.add_argument("--job-id", default="", help="Apply to a single job id.")
+    apply_parser.add_argument(
+        "--force-apply",
+        action="store_true",
+        help="Bypass eligibility criteria checks and attempt application anyway.",
+    )
 
     chrome_mcp_server_parser = subparsers.add_parser(
         "chrome-mcp-server",
@@ -252,15 +257,26 @@ def main() -> None:
         state = load_state(settings.state_path)
         targets = []
         if args.job_id:
-            targets = [job for job in state.jobs if job.job_id == args.job_id and job.eligible]
+            if args.force_apply:
+                targets = [job for job in state.jobs if job.job_id == args.job_id and job.status != "submitted"]
+            else:
+                targets = [job for job in state.jobs if job.job_id == args.job_id and job.eligible]
         elif args.all:
-            targets = [job for job in state.jobs if job.eligible and job.status not in {"submitted", "review_required"}]
+            if args.force_apply:
+                targets = [job for job in state.jobs if job.status != "submitted"]
+            else:
+                targets = [job for job in state.jobs if job.eligible and job.status not in {"submitted", "review_required"}]
 
         if not targets:
             print("No eligible jobs selected.")
             return
 
-        service = JobApplicationService(settings, settings.load_profile(), settings.load_question_answers())
+        service = JobApplicationService(
+            settings,
+            settings.load_profile(),
+            settings.load_question_answers(),
+            force_apply=args.force_apply,
+        )
 
         def save_progress(updated_job):
             state.jobs = replace_job(state.jobs, updated_job)
@@ -315,6 +331,7 @@ def main() -> None:
         print(f"\n{'='*60}")
         print(f"ELIGIBLE JOB LEADS ({len(eligible)})")
         print("=" * 60)
+        profile = settings.load_profile()
         for i, lead in enumerate(eligible, 1):
             print(f"\n[{i}] {lead.title or '(title not extracted)'}")
             print(f"    Age      : {lead.age_minutes}m ago")
@@ -325,21 +342,52 @@ def main() -> None:
             preview = lead.text[:300].replace("\n", " ")
             print(f"    Preview  : {preview}...")
             if lead.email:
-                profile = settings.load_profile()
+                subject, body = _compose_outreach_email(lead, profile)
                 print(f"\n    --- DRAFT EMAIL TO {lead.email} ---")
-                print(f"    Subject: AI/ML Engineer – Available for C2C Contract Roles")
+                print(f"    Subject: {subject}")
                 print(f"    Body:")
-                print(f"    Hi {lead.author.split()[0] if lead.author else 'there'},\n")
-                print(f"    I came across your LinkedIn post and I'm very interested in the {lead.title or 'AI/ML'} opportunity.")
-                print(f"    I'm {profile.get('full_name', 'Your Name')}, a {profile.get('title', 'Generative AI Engineer')} with {profile.get('experience_years', 3)} years of experience in production AI, NLP, and GenAI systems. I'm currently on OPT and available for C2C contract roles immediately.")
-                print(f"    {profile.get('short_pitch', '')}")
-                print(f"    LinkedIn: {profile.get('linkedin_url', '')}")
-                print(f"    Happy to share my resume. Looking forward to hearing from you.")
-                print(f"    Best,")
-                print(f"    {profile.get('full_name', 'Your Name')}")
+                for line in body.splitlines():
+                    print(f"    {line}")
                 print(f"    --- END DRAFT ---")
 
         print(f"\nResults saved → {out_file}")
+
+
+def _compose_outreach_email(lead, profile: dict) -> tuple:
+    author = (lead.author or "").strip()
+    first_name = author.split()[0] if author else "there"
+    role = lead.title or "AI/ML Engineer"
+    location = lead.location or "your location"
+    full_name = profile.get("full_name", "Your Name")
+    phone = profile.get("phone", "")
+    linkedin = profile.get("linkedin_url", "")
+    email_addr = profile.get("email", "")
+    title_line = profile.get("title", "AI/ML Engineer")
+    exp_years = profile.get("experience_years", 3)
+    short_pitch = profile.get("short_pitch", "")
+    work_auth = profile.get("work_authorization", "OPT (F-1)")
+    subject = f"{title_line} – Available for C2C | {full_name}"
+    contact_lines = "\n".join(filter(None, [
+        f"Phone: {phone}" if phone else "",
+        f"LinkedIn: {linkedin}" if linkedin else "",
+        f"Email: {email_addr}" if email_addr else "",
+    ]))
+    body = (
+        f"Hi {first_name},\n\n"
+        f"I came across your LinkedIn post for the {role} role in\n"
+        f"{location} and wanted to reach out directly.\n\n"
+        f"I'm {full_name}, a {title_line} with around {exp_years} years of\n"
+        f"experience building production-grade AI systems. I'm only open to C2C\n"
+        f"contract engagements.\n\n"
+        + (f"{short_pitch}\n\n" if short_pitch else "")
+        + f"I'm on {work_auth} and authorized to work without employer sponsorship.\n"
+        f"Available to start within 2 weeks on a C2C basis.\n\n"
+        f"Resume attached. Happy to connect for a quick call.\n\n"
+        f"Best,\n"
+        f"{full_name}"
+        + (f"\n{contact_lines}" if contact_lines else "")
+    )
+    return subject, body
 
 
 def _rebuild_dashboard(settings, vendors) -> None:

@@ -605,13 +605,37 @@ class VisionApplier:
             # For resume selection radio groups, pick the option that matches
             # the configured resume filename (e.g. "Deep resume.pdf").
             if any(t in label_l for t in ("resume", "cv", "upload")):
-                resume_name = self.profile.get("_resume_filename", "").lower()
+                resume_name = str(self.profile.get("_resume_filename", "") or "").lower()
                 if resume_name:
-                    stem = resume_name.replace(".pdf", "").lower()
+                    norm = lambda s: re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
+                    resume_norm = norm(resume_name)
+                    stem = resume_norm.replace(" pdf", "").strip()
+                    resume_tokens = [t for t in resume_norm.split() if t not in {"resume", "cv", "pdf"}]
+                    best_opt = ""
+                    best_score = 0
                     for opt in f.options:
-                        ol = opt.lower()
-                        if resume_name in ol or stem in ol:
-                            return opt
+                        ol = norm(opt)
+                        score = 0
+                        if resume_norm and resume_norm in ol:
+                            score += 6
+                        if stem and stem in ol:
+                            score += 5
+                        if "resume" in ol:
+                            score += 1
+                        option_tokens = [t for t in ol.split() if t not in {"resume", "cv", "pdf"}]
+                        for rt in resume_tokens:
+                            for ot in option_tokens:
+                                if ot.startswith(rt) or rt.startswith(ot):
+                                    score += 2
+                                    break
+                        if score > best_score:
+                            best_score = score
+                            best_opt = opt
+                    if best_opt and best_score >= 2:
+                        return best_opt
+                # Do not guess a random resume option when the configured
+                # filename cannot be matched.
+                return ""
             yes_opts = [o for o in f.options if "yes" in o.lower()]
             if yes_opts:
                 return yes_opts[0]
@@ -708,6 +732,8 @@ class VisionApplier:
             except Exception: return False
 
         elif f.kind == "radio":
+            if not str(value or "").strip():
+                return False
             try:
                # Find specifically the radio within the legend group
                for radio in dialog.locator("input[type='radio']").all():
