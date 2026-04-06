@@ -398,3 +398,11 @@ Benchmark the live bridge against the current LinkedIn tab:
 ```bash
 ./.venv/bin/python runs/chrome_mcp_benchmark.py --url-contains linkedin.com/jobs/view --find-query "Submitted resume" --verify-post-submit
 ```
+
+---
+
+## Acknowledgements
+
+Built by [Deep Aman Ganta](https://github.com/deepganta).
+
+AI eligibility screening and answer selection powered by [Claude](https://claude.ai) (Anthropic) — used as an embedded API component for job description analysis and form question handling.
