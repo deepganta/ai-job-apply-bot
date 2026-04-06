@@ -1,0 +1,29 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Environment — contains API keys and personal paths
+.env
+
+# Personal config — copy from *.example.json and fill in your own data
+config/candidate_profile.json
+config/question_answers.json
+
+# Run outputs — contain personal job application data
+runs/
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Claude Code local settings
+.claude/

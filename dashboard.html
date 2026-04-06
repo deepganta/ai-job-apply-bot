@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Job Apply Bot — Dashboard</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
+
+  header { background: linear-gradient(135deg, #1a1f2e 0%, #0d1117 100%); border-bottom: 1px solid #2d3748; padding: 20px 32px; display: flex; align-items: center; justify-content: space-between; }
+  header h1 { font-size: 22px; font-weight: 700; color: #fff; }
+  header h1 span { color: #4299e1; }
+  .header-sub { font-size: 13px; color: #718096; margin-top: 4px; }
+  .live-badge { background: #22543d; color: #68d391; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 20px; border: 1px solid #276749; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
+
+  .container { max-width: 1400px; margin: 0 auto; padding: 24px 32px; }
+
+  /* Stats row */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 32px; }
+  .stat { background: #1a1f2e; border: 1px solid #2d3748; border-radius: 12px; padding: 20px; text-align: center; transition: transform .15s; }
+  .stat:hover { transform: translateY(-2px); }
+  .stat .num { font-size: 36px; font-weight: 800; line-height: 1; }
+  .stat .label { font-size: 12px; color: #718096; margin-top: 6px; text-transform: uppercase; letter-spacing: .5px; }
+  .stat.green .num { color: #68d391; }
+  .stat.blue .num { color: #63b3ed; }
+  .stat.yellow .num { color: #f6e05e; }
+  .stat.red .num { color: #fc8181; }
+  .stat.gray .num { color: #718096; }
+
+  /* Day tabs */
+  .tabs { display: flex; gap: 8px; margin-bottom: 24px; }
+  .tab { background: #1a1f2e; border: 1px solid #2d3748; border-radius: 8px; padding: 8px 20px; font-size: 13px; font-weight: 600; cursor: pointer; color: #718096; transition: all .15s; }
+  .tab.active { background: #2b6cb0; border-color: #4299e1; color: #fff; }
+  .tab:hover:not(.active) { border-color: #4a5568; color: #e2e8f0; }
+
+  /* Filter bar */
+  .filters { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
+  .filter-btn { background: #1a1f2e; border: 1px solid #2d3748; border-radius: 6px; padding: 6px 14px; font-size: 12px; cursor: pointer; color: #a0aec0; transition: all .15s; }
+  .filter-btn.active { background: #2d3748; border-color: #4a5568; color: #fff; }
+  .search-box { flex: 1; min-width: 200px; background: #1a1f2e; border: 1px solid #2d3748; border-radius: 6px; padding: 6px 12px; font-size: 13px; color: #e2e8f0; outline: none; }
+  .search-box:focus { border-color: #4299e1; }
+  .search-box::placeholder { color: #4a5568; }
+
+  /* Table */
+  .table-wrap { background: #1a1f2e; border: 1px solid #2d3748; border-radius: 12px; overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead { background: #141922; }
+  th { padding: 12px 16px; text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: #718096; border-bottom: 1px solid #2d3748; white-space: nowrap; }
+  td { padding: 12px 16px; border-bottom: 1px solid #1e2535; vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #1e2535; }
+  .company { font-weight: 600; color: #e2e8f0; }
+  .title { color: #a0aec0; font-size: 12px; margin-top: 2px; }
+  .url-link { color: #4299e1; text-decoration: none; font-size: 11px; }
+  .url-link:hover { text-decoration: underline; }
+
+  /* Status pills */
+  .pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .pill-submitted   { background: #1c4532; color: #68d391; border: 1px solid #276749; }
+  .pill-pending     { background: #1a365d; color: #63b3ed; border: 1px solid #2a4a8a; }
+  .pill-eligible    { background: #1a365d; color: #63b3ed; border: 1px solid #2a4a8a; }
+  .pill-review      { background: #44337a; color: #d6bcfa; border: 1px solid #553c9a; }
+  .pill-skipped     { background: #1a202c; color: #718096; border: 1px solid #2d3748; }
+  .pill-not-eligible{ background: #1a202c; color: #718096; border: 1px solid #2d3748; }
+
+  .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+  .dot-submitted { background: #68d391; }
+  .dot-pending { background: #63b3ed; }
+  .dot-review { background: #d6bcfa; }
+  .dot-skipped { background: #4a5568; }
+
+  .reason { font-size: 11px; color: #718096; max-width: 220px; }
+  .easy-apply { font-size: 11px; color: #48bb78; }
+  .no-results { text-align: center; padding: 48px; color: #4a5568; font-size: 14px; }
+
+  /* Loading */
+  .loading { text-align: center; padding: 48px; color: #4a5568; }
+
+  /* Refresh btn */
+  .refresh-btn { background: #2b6cb0; border: none; color: #fff; padding: 8px 16px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+  .refresh-btn:hover { background: #3182ce; }
+  .refresh-icon { display: inline-block; transition: transform .3s; }
+  .refresh-btn:active .refresh-icon { transform: rotate(180deg); }
+
+  .empty-state { text-align: center; padding: 60px 20px; color: #4a5568; }
+  .empty-state svg { opacity: .3; margin-bottom: 12px; }
+
+  @media (max-width: 768px) {
+    .container { padding: 16px; }
+    th:nth-child(4), td:nth-child(4),
+    th:nth-child(5), td:nth-child(5) { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>🤖 AI Job Apply Bot — <span>Dashboard</span></h1>
+    <div class="header-sub">AI/ML Engineer · Contract Roles · LinkedIn &amp; Indeed Easy Apply</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:12px;">
+    <span class="live-badge">● LIVE</span>
+    <button class="refresh-btn" onclick="loadAll()"><span class="refresh-icon">↻</span> Refresh</button>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- Stats -->
+  <div class="stats" id="stats">
+    <div class="stat green"><div class="num" id="s-submitted">—</div><div class="label">✅ Submitted</div></div>
+    <div class="stat blue"><div class="num" id="s-pending">—</div><div class="label">🔵 Pending</div></div>
+    <div class="stat yellow"><div class="num" id="s-review">—</div><div class="label">⚠️ Review Req.</div></div>
+    <div class="stat gray"><div class="num" id="s-skipped">—</div><div class="label">⏭️ Skipped</div></div>
+    <div class="stat gray"><div class="num" id="s-total">—</div><div class="label">📋 Total Found</div></div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" onclick="switchDay('today')" id="tab-today">📅 Today (Apr 3)</div>
+    <div class="tab" onclick="switchDay('yesterday')" id="tab-yesterday">📅 Yesterday (Apr 2)</div>
+  </div>
+
+  <!-- Filters -->
+  <div class="filters">
+    <input class="search-box" id="search" placeholder="🔍  Search role, company..." oninput="renderTable()">
+    <button class="filter-btn active" onclick="setFilter('all')" id="f-all">All</button>
+    <button class="filter-btn" onclick="setFilter('submitted')" id="f-submitted">✅ Submitted</button>
+    <button class="filter-btn" onclick="setFilter('pending')" id="f-pending">🔵 Pending</button>
+    <button class="filter-btn" onclick="setFilter('review_required')" id="f-review_required">⚠️ Review</button>
+    <button class="filter-btn" onclick="setFilter('skipped')" id="f-skipped">⏭️ Skipped</button>
+  </div>
+
+  <!-- Table -->
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Role & Company</th>
+          <th>Status</th>
+          <th>Reason / Notes</th>
+          <th>Easy Apply</th>
+          <th>Time</th>
+          <th>Link</th>
+        </tr>
+      </thead>
+      <tbody id="job-table">
+        <tr><td colspan="7" class="loading">Loading jobs...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+let allJobs = [];
+let currentDay = 'today';
+let currentFilter = 'all';
+
+const STATE_PATHS = {
+  today: 'runs/2026-04-03/dashboard_state.json',
+  yesterday: 'runs/2026-04-02/dashboard_state.json',
+};
+
+async function loadAll() {
+  await loadDay(currentDay);
+}
+
+async function loadDay(day) {
+  const path = STATE_PATHS[day];
+  try {
+    // Use XMLHttpRequest to load local file (works when served via local server)
+    const resp = await fetch(path + '?t=' + Date.now());
+    if (!resp.ok) throw new Error('Not found');
+    const data = await resp.json();
+    allJobs = data.jobs || [];
+  } catch (e) {
+    // Try reading embedded data
+    allJobs = window._embeddedJobs || [];
+  }
+  updateStats();
+  renderTable();
+}
+
+function switchDay(day) {
+  currentDay = day;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + day).classList.add('active');
+  loadDay(day);
+}
+
+function setFilter(f) {
+  currentFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('f-' + f).classList.add('active');
+  renderTable();
+}
+
+function updateStats() {
+  const counts = { submitted: 0, pending: 0, review_required: 0, skipped: 0, total: allJobs.length };
+  allJobs.forEach(j => {
+    const s = j.status || 'pending';
+    if (s in counts) counts[s]++;
+    else if (s === 'ready_to_submit') counts.pending++;
+  });
+  document.getElementById('s-submitted').textContent = counts.submitted;
+  document.getElementById('s-pending').textContent = counts.pending;
+  document.getElementById('s-review').textContent = counts.review_required;
+  document.getElementById('s-skipped').textContent = counts.skipped;
+  document.getElementById('s-total').textContent = counts.total;
+}
+
+function pillHtml(status) {
+  const map = {
+    submitted: ['pill-submitted', '✅ Submitted'],
+    pending: ['pill-pending', '🔵 Pending'],
+    review_required: ['pill-review', '⚠️ Review'],
+    ready_to_submit: ['pill-pending', '📋 Ready'],
+    skipped: ['pill-skipped', '⏭️ Skipped'],
+    not_eligible: ['pill-not-eligible', '❌ N/A'],
+  };
+  const [cls, label] = map[status] || ['pill-skipped', status];
+  return `<span class="pill ${cls}">${label}</span>`;
+}
+
+function renderTable() {
+  const search = document.getElementById('search').value.toLowerCase();
+  let jobs = allJobs;
+
+  // Filter by status
+  if (currentFilter !== 'all') {
+    jobs = jobs.filter(j => (j.status || 'pending') === currentFilter);
+  }
+
+  // Search filter
+  if (search) {
+    jobs = jobs.filter(j =>
+      (j.title || '').toLowerCase().includes(search) ||
+      (j.company || '').toLowerCase().includes(search)
+    );
+  }
+
+  const tbody = document.getElementById('job-table');
+  if (jobs.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" class="no-results">No jobs match your filter.</td></tr>';
+    return;
+  }
+
+  // Sort: submitted first, then pending, then review, then skipped
+  const order = { submitted: 0, ready_to_submit: 1, pending: 2, review_required: 3, skipped: 4 };
+  jobs.sort((a, b) => (order[a.status] ?? 5) - (order[b.status] ?? 5));
+
+  tbody.innerHTML = jobs.map((j, i) => {
+    const url = j.apply_url || j.source_url || '#';
+    const linkedinId = url.match(/\/jobs\/view\/(\d+)/)?.[1] || '';
+    const time = j.submitted_at
+      ? new Date(j.submitted_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})
+      : (j.posted_at ? new Date(j.posted_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '—');
+    const reason = (j.reason || '').replace('Skipped by criteria: ', '').replace('LinkedIn ', '');
+    const easyApply = j.easy_apply ? '<span class="easy-apply">⚡ Easy Apply</span>' : '<span style="color:#4a5568;font-size:11px">External</span>';
+
+    return `<tr>
+      <td style="color:#4a5568;font-size:11px">${i+1}</td>
+      <td>
+        <div class="company">${j.company || '—'}</div>
+        <div class="title">${j.title || '—'}</div>
+      </td>
+      <td>${pillHtml(j.status || 'pending')}</td>
+      <td><div class="reason">${reason || '—'}</div></td>
+      <td>${easyApply}</td>
+      <td style="color:#718096;font-size:11px;white-space:nowrap">${time}</td>
+      <td>${url !== '#' ? `<a class="url-link" href="${url}" target="_blank">View ↗</a>` : '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+// Auto-refresh every 15 seconds
+setInterval(loadAll, 15000);
+
+// Initial load
+loadAll();
+</script>
+</body>
+</html>

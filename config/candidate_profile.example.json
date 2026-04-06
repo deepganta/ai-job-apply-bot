@@ -1,0 +1,53 @@
+{
+  "full_name": "Your Full Name",
+  "title": "AI/ML Engineer",
+  "email": "your.email@example.com",
+  "phone": "+1 (555) 000-0000",
+  "summary": "AI engineer with X years of experience delivering production ML, NLP, and GenAI systems.",
+  "short_pitch": "I build production AI systems across RAG, LLM applications, NLP pipelines, and MLOps.",
+  "location": "City, ST 00000",
+  "city": "City",
+  "state": "ST",
+  "zip_code": "00000",
+  "linkedin_url": "https://www.linkedin.com/in/your-profile/",
+  "country": "United States",
+  "github_url": "",
+  "portfolio_url": "",
+  "current_company": "Your Company",
+  "current_role": "AI Engineer",
+  "experience_years": 3,
+  "work_authorization": "Yes",
+  "requires_visa_sponsorship": "No",
+  "us_citizen": "No",
+  "visa_status": "I am authorized to work in the US.",
+  "sponsorship_type": "NA",
+  "veteran_status": "No, I am not a protected veteran",
+  "disability_status": "No",
+  "ethnicity": "Prefer not to say",
+  "gender": "Prefer not to say",
+  "sexual_orientation": "Prefer not to say",
+  "education": [
+    {
+      "school": "Your University",
+      "field_of_study": "Computer Science",
+      "degree": "Masters Degree",
+      "gpa": "3.8",
+      "from": "2022-08-01",
+      "to": "2024-05-01"
+    }
+  ],
+  "skills": [
+    "Python",
+    "Machine Learning",
+    "Deep Learning",
+    "NLP",
+    "Generative AI",
+    "RAG",
+    "LangChain",
+    "PyTorch",
+    "AWS",
+    "Docker"
+  ],
+  "employment_preference": "C2C contract roles only",
+  "max_target_experience_years": 4
+}

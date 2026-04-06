@@ -1,0 +1,619 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AI/ML Job Apply Bot</title>
+    <style>
+      :root {
+        --bg: #f3efe6;
+        --ink: #1f2421;
+        --muted: #5c645d;
+        --panel: #fff9f1;
+        --line: #dccfb8;
+        --accent: #1f6f5f;
+        --warn: #925f00;
+        --bad: #9d2f2f;
+      }
+      body {
+        margin: 0;
+        font-family: Georgia, "Times New Roman", serif;
+        background:
+          radial-gradient(circle at top left, rgba(31, 111, 95, 0.15), transparent 32rem),
+          linear-gradient(180deg, #f7f3ea 0%, var(--bg) 100%);
+        color: var(--ink);
+      }
+      .shell {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 28px 18px 40px;
+      }
+      .hero {
+        background: linear-gradient(135deg, rgba(31, 111, 95, 0.92), rgba(23, 48, 44, 0.96));
+        color: #fff;
+        border-radius: 20px;
+        padding: 24px;
+        box-shadow: 0 24px 48px rgba(23, 48, 44, 0.18);
+      }
+      .hero h1 {
+        margin: 0 0 8px;
+        font-size: 2rem;
+      }
+      .hero p {
+        margin: 0;
+        max-width: 60rem;
+        line-height: 1.5;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 14px;
+        margin-top: 20px;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 16px;
+      }
+      .card strong {
+        display: block;
+        font-size: 1.4rem;
+        margin-top: 6px;
+      }
+      .section {
+        margin-top: 20px;
+        background: rgba(255, 249, 241, 0.88);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 18px;
+      }
+      .section h2 {
+        margin: 0 0 10px;
+        font-size: 1.25rem;
+      }
+      textarea, input, select, button {
+        font: inherit;
+      }
+      textarea, input, select {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid #cbbda5;
+        border-radius: 12px;
+        padding: 10px 12px;
+        background: #fffdf8;
+      }
+      textarea {
+        min-height: 180px;
+        resize: vertical;
+      }
+      .controls {
+        display: grid;
+        grid-template-columns: 1fr 160px 160px 220px;
+        gap: 12px;
+        align-items: end;
+      }
+      .controls form {
+        margin: 0;
+      }
+      button {
+        border: 0;
+        border-radius: 999px;
+        padding: 11px 16px;
+        background: var(--accent);
+        color: #fff;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: #374b46;
+      }
+      .warning {
+        color: var(--warn);
+      }
+      .danger {
+        color: var(--bad);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 12px;
+      }
+      th, td {
+        border-top: 1px solid var(--line);
+        padding: 10px 8px;
+        text-align: left;
+        vertical-align: top;
+        font-size: 0.95rem;
+      }
+      th {
+        font-size: 0.8rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .pill {
+        display: inline-block;
+        padding: 0.25rem 0.6rem;
+        border-radius: 999px;
+        background: rgba(31, 111, 95, 0.12);
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .job-actions {
+        display: grid;
+        gap: 8px;
+      }
+      .inline-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+      }
+      .status-pill {
+        display: inline-block;
+        padding: 0.2rem 0.6rem;
+        border-radius: 999px;
+        background: rgba(31, 111, 95, 0.12);
+        text-transform: capitalize;
+      }
+      .status-pill.running {
+        background: rgba(146, 95, 0, 0.14);
+      }
+      .status-pill.done {
+        background: rgba(31, 111, 95, 0.16);
+      }
+      .status-pill.skipped {
+        background: rgba(92, 100, 93, 0.16);
+      }
+      .status-pill.error {
+        background: rgba(157, 47, 47, 0.16);
+      }
+      .small {
+        font-size: 0.88rem;
+      }
+      button.danger-button {
+        background: #8b2e2e;
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      a {
+        color: var(--accent);
+      }
+      @media (max-width: 900px) {
+        .controls {
+          grid-template-columns: 1fr;
+        }
+        table, thead, tbody, th, td, tr {
+          display: block;
+        }
+        th {
+          display: none;
+        }
+        td {
+          border-top: 0;
+          padding: 8px 0;
+        }
+        tr {
+          border-top: 1px solid var(--line);
+          padding: 12px 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <section class="hero">
+        <h1>AI/ML Job Apply Bot</h1>
+        <p>
+          Trusted vendors come from your workbook. The bot can also scan Indeed in a persistent browser session, keep only recent AI and ML roles,
+          and apply one-by-one or in a batch. It skips anything ambiguous instead of guessing required answers.
+        </p>
+      </section>
+
+      <section class="grid">
+        <div class="card">
+          <span class="muted">Trusted vendors loaded</span>
+          <strong>{{ vendors_loaded }}</strong>
+        </div>
+        <div class="card">
+          <span class="muted">Jobs in dashboard</span>
+          <strong>{{ state.jobs|length }}</strong>
+        </div>
+        <div class="card">
+          <span class="muted">Submitted jobs</span>
+          <strong>{{ submitted_jobs|length }}</strong>
+        </div>
+        <div class="card">
+          <span class="muted">Last scan</span>
+          <strong>{{ prettify_timestamp(state.last_scan_at) or "Not scanned yet" }}</strong>
+        </div>
+        <div class="card">
+          <span class="muted">Career pages resolved</span>
+          <strong>{{ resolved_career_pages }}</strong>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Indeed Search</h2>
+        <p class="muted">
+          Use a visible browser profile for Indeed so you can clear sign-in or verification prompts once. Easy Apply only is the safest mode.
+        </p>
+        <form method="post" action="/scan-indeed">
+          <div class="controls" style="grid-template-columns: 1.5fr 1.2fr 120px 120px 180px 180px;">
+            <div>
+              <label for="indeed_query">Query</label>
+              <input id="indeed_query" type="text" name="indeed_query" value="{{ indeed_search.query }}">
+            </div>
+            <div>
+              <label for="indeed_location">Location</label>
+              <input id="indeed_location" type="text" name="indeed_location" value="{{ indeed_search.location }}">
+            </div>
+            <div>
+              <label for="indeed_max_pages">Max pages</label>
+              <input id="indeed_max_pages" type="number" name="indeed_max_pages" min="1" max="10" value="{{ indeed_search.max_pages }}">
+            </div>
+            <div>
+              <label for="indeed_max_jobs">Max jobs</label>
+              <input id="indeed_max_jobs" type="number" name="indeed_max_jobs" min="1" max="100" value="{{ indeed_search.max_jobs }}">
+            </div>
+            <div>
+              <label for="indeed_easy_apply_only">Apply support</label>
+              <select id="indeed_easy_apply_only" name="indeed_easy_apply_only">
+                <option value="true" {% if indeed_search.easy_apply_only %}selected{% endif %}>Easy Apply only</option>
+                <option value="false" {% if not indeed_search.easy_apply_only %}selected{% endif %}>Include manual-only</option>
+              </select>
+            </div>
+            <div>
+              <label>&nbsp;</label>
+              <button id="indeed-scan-button" type="submit">Start Indeed Scan</button>
+            </div>
+          </div>
+        </form>
+
+        <h3 style="margin-top:1.5rem;">LinkedIn Search</h3>
+        <p class="muted">Scan LinkedIn for recent contract AI/ML jobs using the bridge fast path.</p>
+        <form method="post" action="/scan-linkedin">
+          <div class="controls" style="grid-template-columns: 1.5fr 1.2fr 120px 120px 180px 180px;">
+            <div>
+              <label for="linkedin_query">Query</label>
+              <input id="linkedin_query" type="text" name="linkedin_query" value="{{ state.linkedin_search.query if state.linkedin_search else 'AI ML Engineer C2C' }}">
+            </div>
+            <div>
+              <label for="linkedin_location">Location</label>
+              <input id="linkedin_location" type="text" name="linkedin_location" value="{{ state.linkedin_search.location if state.linkedin_search else 'United States' }}">
+            </div>
+            <div>
+              <label for="linkedin_max_pages">Max pages</label>
+              <input id="linkedin_max_pages" type="number" name="linkedin_max_pages" min="1" max="10" value="2">
+            </div>
+            <div>
+              <label for="linkedin_max_jobs">Max jobs</label>
+              <input id="linkedin_max_jobs" type="number" name="linkedin_max_jobs" min="1" max="100" value="25">
+            </div>
+            <div>
+              <label for="linkedin_easy_apply_only">Apply type</label>
+              <select id="linkedin_easy_apply_only" name="linkedin_easy_apply_only">
+                <option value="true" selected>Easy Apply only</option>
+                <option value="false">Include all</option>
+              </select>
+            </div>
+            <div>
+              <label>&nbsp;</label>
+              <button id="linkedin-scan-button" type="submit">Start LinkedIn Scan</button>
+            </div>
+          </div>
+        </form>
+      </section>
+
+      <section class="section">
+        <h2>Manual Job URLs</h2>
+        <p class="muted">Paste direct job URLs here if you want to guide the bot beyond the vendor site scan.</p>
+        <form method="post" action="/scan">
+          <textarea name="manual_urls">{{ manual_urls }}</textarea>
+          <div class="controls" style="margin-top: 12px;">
+            <div>
+              <label for="vendor_limit">Vendor scan limit</label>
+              <input id="vendor_limit" type="number" name="vendor_limit" min="1" max="200" value="25">
+            </div>
+            <div>
+              <label for="scan_mode">Apply mode</label>
+              <select id="scan_mode" name="submit_mode">
+                <option value="review">review</option>
+                <option value="auto">auto</option>
+              </select>
+            </div>
+            <div>
+              <label>&nbsp;</label>
+              <button id="scan-button" type="submit">Start Vendor Scan</button>
+            </div>
+            <div>
+              <label>&nbsp;</label>
+              <button class="secondary" type="submit" formaction="/apply-eligible">Apply Eligible Jobs</button>
+            </div>
+          </div>
+        </form>
+        <form method="post" action="/clear-results" style="margin-top: 12px;">
+          <div class="inline-actions">
+            <button id="clear-results-button" class="danger-button" type="submit" {% if scan_status.running %}disabled{% endif %}>Clear Fetched Jobs</button>
+            <span class="muted small">Use this to wipe the previously fetched dashboard list and screenshots.</span>
+          </div>
+        </form>
+      </section>
+
+      <section class="section">
+        <h2>Scan Progress</h2>
+        <div class="grid" style="margin-top: 0;">
+          <div class="card">
+            <span class="muted">Scan state</span>
+            <strong id="scan-running">{{ "Running" if scan_status.running else "Idle" }}</strong>
+          </div>
+          <div class="card">
+            <span class="muted">Current target</span>
+            <strong id="scan-current-vendor">{{ scan_status.current_vendor or "-" }}</strong>
+          </div>
+          <div class="card">
+            <span class="muted">Current page</span>
+            <strong id="scan-current-url" class="small">{{ scan_status.current_url or "-" }}</strong>
+          </div>
+          <div class="card">
+            <span class="muted">Message</span>
+            <strong id="scan-message" class="small">{{ scan_status.message or "No scan started yet" }}</strong>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Target</th>
+              <th>Source</th>
+              <th>Working URL</th>
+              <th>Status</th>
+              <th>Found</th>
+              <th>Eligible</th>
+              <th>Last Checked</th>
+              <th>Note</th>
+            </tr>
+          </thead>
+          <tbody id="scan-vendors-body">
+            {% if scan_status.vendors %}
+              {% for vendor in scan_status.vendors %}
+                <tr>
+                  <td>{{ vendor.name }}</td>
+                  <td><a href="{{ vendor.website }}" target="_blank" rel="noreferrer">{{ vendor.website }}</a></td>
+                  <td>
+                    {% if vendor.resolved_website %}
+                      <a href="{{ vendor.resolved_website }}" target="_blank" rel="noreferrer">{{ vendor.resolved_website }}</a>
+                    {% else %}
+                      <span class="muted">Pending</span>
+                    {% endif %}
+                  </td>
+                  <td><span class="status-pill {{ vendor.status }}">{{ vendor.status }}</span></td>
+                  <td>{{ vendor.jobs_found }}</td>
+                  <td>{{ vendor.eligible_found }}</td>
+                  <td class="small">{{ vendor.last_url or "-" }}</td>
+                  <td>{{ vendor.note or "-" }}</td>
+                </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="8" class="muted">No scan progress yet.</td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <h2>Resolved Career Pages</h2>
+        <p class="muted">These are the cleaned entry pages the crawler will use instead of generic vendor homepages.</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Vendor</th>
+              <th>Homepage</th>
+              <th>Career Page</th>
+              <th>Method</th>
+              <th>Score</th>
+              <th>Aliases</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if career_pages %}
+              {% for vendor in career_pages %}
+                <tr>
+                  <td>{{ vendor.name }}</td>
+                  <td><a href="{{ vendor.source_website }}" target="_blank" rel="noreferrer">{{ vendor.source_website }}</a></td>
+                  <td>
+                    {% if vendor.career_page %}
+                      <a href="{{ vendor.career_page }}" target="_blank" rel="noreferrer">{{ vendor.career_page }}</a>
+                      {% if vendor.link_text %}
+                        <div class="muted small">{{ vendor.link_text }}</div>
+                      {% endif %}
+                    {% else %}
+                      <span class="muted">Not resolved yet</span>
+                    {% endif %}
+                  </td>
+                  <td>{{ vendor.method or "-" }}</td>
+                  <td>{{ vendor.score }}</td>
+                  <td class="small">{{ vendor.aliases or "-" }}</td>
+                </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="6" class="muted">No career pages resolved yet.</td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <h2>Missing Profile Details</h2>
+        {% if critical_missing %}
+          <p class="warning">{{ critical_missing|join(", ") }}</p>
+        {% else %}
+          <p class="muted">Core auto-fill fields are present.</p>
+        {% endif %}
+      </section>
+
+      <section class="section">
+        <h2>Submitted Jobs</h2>
+        {% if submitted_jobs %}
+          <ul>
+            {% for job in submitted_jobs %}
+              <li>
+                <span class="pill">{{ job.company }} | {{ job.title }}</span>
+                <span class="muted"> {{ prettify_timestamp(job.submitted_at) }}</span>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="muted">No submissions yet.</p>
+        {% endif %}
+      </section>
+
+      <section class="section">
+        <h2>Discovered Jobs</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Company</th>
+              <th>Role</th>
+              <th>Posted</th>
+              <th>Checks</th>
+              <th>Status</th>
+              <th>Reason</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for job in state.jobs %}
+              <tr>
+                <td>
+                  <div><strong>{{ job.company or "Unknown" }}</strong></div>
+                  <div class="muted">{{ job.provider }}</div>
+                </td>
+                <td>
+                  <div>{{ job.title or "Unknown role" }}</div>
+                  <div class="muted">{{ job.location }}</div>
+                  <div><a href="{{ job.source_url }}" target="_blank" rel="noreferrer">Open source</a></div>
+                </td>
+                <td>{{ prettify_timestamp(job.posted_at) or "Unknown" }}</td>
+                <td>
+                  <div>{{ "trusted" if job.trusted else "untrusted" }}</div>
+                  <div>{{ "ai/ml" if job.ai_ml_match else "not ai/ml" }}</div>
+                  <div>{{ "recent" if job.recency_ok else "not recent" }}</div>
+                  <div>{{ "easy apply" if job.easy_apply else "manual apply" }}</div>
+                  <div>{{ "automatable" if job.apply_supported else "manual only" }}</div>
+                </td>
+                <td>{{ job.status }}</td>
+                <td>
+                  <div>{{ job.reason or "-" }}</div>
+                  {% if job.screenshot_path %}
+                    <div><a href="/artifacts/{{ job.screenshot_path.split('/')[-1] }}" target="_blank">Screenshot</a></div>
+                  {% endif %}
+                </td>
+                <td>
+                  <div class="job-actions">
+                    {% if job.eligible and job.status != "submitted" %}
+                      <form method="post" action="/apply/{{ job.job_id }}">
+                        <input type="hidden" name="submit_mode" value="auto">
+                        <button type="submit">Apply</button>
+                      </form>
+                      <form method="post" action="/apply/{{ job.job_id }}">
+                        <input type="hidden" name="submit_mode" value="review">
+                        <button class="secondary" type="submit">Review Fill</button>
+                      </form>
+                    {% else %}
+                      <span class="muted">No action</span>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
+    </div>
+    <script>
+      const initialScanStatus = {{ scan_status | tojson }};
+
+      function escapeHtml(value) {
+        return String(value || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function renderScanStatus(status) {
+        document.getElementById("scan-running").textContent = status.running ? "Running" : "Idle";
+        document.getElementById("scan-current-vendor").textContent = status.current_vendor || "-";
+        document.getElementById("scan-current-url").textContent = status.current_url || "-";
+        document.getElementById("scan-message").textContent = status.message || "No scan started yet";
+
+        const clearButton = document.getElementById("clear-results-button");
+        if (clearButton) {
+          clearButton.disabled = !!status.running;
+        }
+
+        const scanButton = document.getElementById("scan-button");
+        if (scanButton) {
+          scanButton.disabled = !!status.running;
+          scanButton.textContent = status.running ? "Scanning Vendors..." : "Start Vendor Scan";
+        }
+
+        const indeedScanButton = document.getElementById("indeed-scan-button");
+        if (indeedScanButton) {
+          indeedScanButton.disabled = !!status.running;
+          indeedScanButton.textContent = status.running ? "Scanning Indeed..." : "Start Indeed Scan";
+        }
+
+        const linkedinScanButton = document.getElementById("linkedin-scan-button");
+        if (linkedinScanButton) {
+          linkedinScanButton.disabled = !!status.running;
+          linkedinScanButton.textContent = status.running ? "Scanning LinkedIn..." : "Start LinkedIn Scan";
+        }
+
+        const tbody = document.getElementById("scan-vendors-body");
+        const vendors = status.vendors || [];
+        if (!vendors.length) {
+          tbody.innerHTML = '<tr><td colspan="8" class="muted">No scan progress yet.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = vendors.map((vendor) => `
+          <tr>
+            <td>${escapeHtml(vendor.name)}</td>
+            <td><a href="${escapeHtml(vendor.website)}" target="_blank" rel="noreferrer">${escapeHtml(vendor.website)}</a></td>
+            <td>${vendor.resolved_website ? `<a href="${escapeHtml(vendor.resolved_website)}" target="_blank" rel="noreferrer">${escapeHtml(vendor.resolved_website)}</a>` : '<span class="muted">Pending</span>'}</td>
+            <td><span class="status-pill ${escapeHtml(vendor.status)}">${escapeHtml(vendor.status)}</span></td>
+            <td>${escapeHtml(vendor.jobs_found)}</td>
+            <td>${escapeHtml(vendor.eligible_found)}</td>
+            <td class="small">${escapeHtml(vendor.last_url || "-")}</td>
+            <td>${escapeHtml(vendor.note || "-")}</td>
+          </tr>
+        `).join("");
+      }
+
+      async function refreshScanStatus() {
+        try {
+          const response = await fetch("/scan-status", { cache: "no-store" });
+          if (!response.ok) {
+            return;
+          }
+          const payload = await response.json();
+          renderScanStatus(payload);
+        } catch (error) {
+          console.error(error);
+        }
+      }
+
+      renderScanStatus(initialScanStatus);
+      setInterval(refreshScanStatus, 2000);
+    </script>
+  </body>
+</html>
