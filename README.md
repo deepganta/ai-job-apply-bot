@@ -1,6 +1,6 @@
 # AI/ML Job Apply Bot
 
-Current baseline: `v0.5.0`
+Current baseline: `v0.5.1`
 
 Release note: [docs/releases/linkedin-verified-baseline-v0.3.0.md](docs/releases/linkedin-verified-baseline-v0.3.0.md)
 

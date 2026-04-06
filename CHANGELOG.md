@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.1 - 2026-04-06
+
+Resume-lock safety patch and LinkedIn apply flow hardening.
+
+- Added default resume-lock behavior so the bot does not change resume/CV selection or upload fields unless explicitly allowed via `JOB_BOT_LOCK_RESUME_CHANGES=0`.
+- Applied resume-lock checks in both [job_apply_bot/application.py](job_apply_bot/application.py) and [job_apply_bot/apply/vision_applier.py](job_apply_bot/apply/vision_applier.py).
+- Added force-apply support for CLI apply runs with `--force-apply` in [job_apply_bot/cli.py](job_apply_bot/cli.py) and [job_apply_bot/application.py](job_apply_bot/application.py).
+- Improved resume option matching logic in LinkedIn apply paths to reduce accidental selection of similarly named resumes.
+
 ## 0.5.0 - 2026-03-29
 
 HTTP REST API + screenshot + execute_js + page.wait for the Chrome MCP bridge.

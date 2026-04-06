@@ -180,6 +180,14 @@ class JobApplicationService:
         self.max_experience_years = int(profile.get("max_target_experience_years", 4) or 4)
         env_force = os.getenv("JOB_BOT_FORCE_APPLY", "").strip().lower() in {"1", "true", "yes", "on"}
         self.force_apply = bool(force_apply or env_force)
+        # Default-safe behavior: avoid changing resume selections/uploads unless
+        # explicitly disabled via env.
+        self.lock_resume_changes = os.getenv("JOB_BOT_LOCK_RESUME_CHANGES", "1").strip().lower() not in {
+            "0",
+            "false",
+            "no",
+            "off",
+        }
         self.current_provider = ""
         self.exact_answers = {normalize_text(key): value for key, value in answers.get("exact", {}).items()}
         self.contains_answers = {normalize_text(key): value for key, value in answers.get("contains", {}).items()}
@@ -808,6 +816,8 @@ class JobApplicationService:
             label = self._best_label(field)
             if not label:
                 continue
+            if self.lock_resume_changes and self._is_resume_related_field(field):
+                continue
             answer = self._resolve_answer(field)
             if answer is None:
                 answer = self._smart_fallback_answer(field)
@@ -1273,6 +1283,10 @@ class JobApplicationService:
         locator = page.locator(selector)
         label = self._best_label(field)
         normalized_label = normalize_text(label)
+        if self.lock_resume_changes and self._is_resume_related_field(field):
+            if self._field_has_value(locator, field):
+                return ""
+            return label if field.get("required") else ""
         answer = self._resolve_answer(field)
         if answer is None:
             answer = self._smart_fallback_answer(field)
@@ -1311,6 +1325,10 @@ class JobApplicationService:
 
     def _fill_choice_group(self, page: Page, group: List[Dict[str, object]]) -> str:
         label = self._best_label(group[0])
+        if self.lock_resume_changes and self._is_resume_related_field(group[0]):
+            if self._choice_group_has_selection(page, group):
+                return ""
+            return label if any(item.get("required") for item in group) else ""
         answer = self._resolve_answer(group[0])
         if answer is None:
             answer = self._smart_fallback_answer(group[0])
@@ -1365,6 +1383,9 @@ class JobApplicationService:
         field_name = normalize_text(str(field.get("name", "")))
         placeholder = normalize_text(str(field.get("placeholder", "")))
         indeed_hint = f"{field_name} {placeholder}".strip()
+
+        if self.lock_resume_changes and self._is_resume_related_field(field):
+            return None
 
         # Indeed forms occasionally expose noisy labels that repeat nearby field
         # labels; prefer explicit input name/placeholder hints when available.
@@ -1493,6 +1514,8 @@ class JobApplicationService:
 
     def _smart_fallback_answer(self, field: Dict[str, object]) -> Optional[str]:
         """Best-effort answer derived from the candidate profile when no explicit answer is known."""
+        if self.lock_resume_changes and self._is_resume_related_field(field):
+            return None
         label = normalize_text(self._best_label(field))
         skills_lower = [s.lower() for s in (self.profile.get("skills") or [])]
         experience_years = int(self.profile.get("experience_years") or 0)
@@ -1561,6 +1584,23 @@ class JobApplicationService:
         if label:
             return label
         return str(field.get("name", "")).strip() or "unlabeled field"
+
+    def _is_resume_related_field(self, field: Dict[str, object]) -> bool:
+        tokens: List[str] = []
+        for key in ("label", "name", "placeholder", "optionLabel"):
+            value = field.get(key, "")
+            if value:
+                tokens.append(str(value))
+        options = field.get("options") or []
+        if isinstance(options, list):
+            for option in options:
+                if isinstance(option, dict):
+                    tokens.append(str(option.get("text", "")))
+                    tokens.append(str(option.get("value", "")))
+                else:
+                    tokens.append(str(option))
+        blob = normalize_text(" ".join(tokens))
+        return bool(blob and ("resume" in blob or "curriculum vitae" in blob or " cv " in f" {blob} "))
 
     def _is_meaningful_application_field(self, field: Dict[str, object]) -> bool:
         label = normalize_text(self._best_label(field))

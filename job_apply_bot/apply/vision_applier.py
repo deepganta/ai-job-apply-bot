@@ -296,6 +296,12 @@ class VisionApplier:
         self._llm = llm or make_llm_provider()
         # Merged {normalized_key: answer} from question_answers.json (contains section)
         self._custom_answers: Dict[str, str] = custom_answers or {}
+        self._lock_resume_changes = os.getenv("JOB_BOT_LOCK_RESUME_CHANGES", "1").strip().lower() not in {
+            "0",
+            "false",
+            "no",
+            "off",
+        }
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -515,6 +521,8 @@ class VisionApplier:
         filled = []
 
         for f in empty:
+            if self._lock_resume_changes and self._is_resume_field(f):
+                continue
             answer = answers.get(f.label, "").strip()
             if not answer or (fix_mode and f.kind == "number"):
                 answer = self._heuristic_answer(f, fix_mode=fix_mode)
@@ -559,6 +567,8 @@ class VisionApplier:
 
     def _heuristic_answer(self, f: FormField, fix_mode: bool = False) -> str:
         """Rule-based fallback for common LinkedIn form questions."""
+        if self._lock_resume_changes and self._is_resume_field(f):
+            return ""
         exp = str(self.profile.get("experience_years", 3))
         # In fix_mode for numbers, if the previous value failed, we'll try "0" or "1" as a safe minimum
         if fix_mode and f.kind == "number":
@@ -661,6 +671,10 @@ class VisionApplier:
         except Exception as exc:
             log.warning("AI select_answer unavailable: %s", exc)
             return ""
+
+    def _is_resume_field(self, f: FormField) -> bool:
+        blob = " ".join([f.label or "", *[o or "" for o in f.options or []]]).lower()
+        return bool(blob and re.search(r"\b(resume|curriculum vitae|cv)\b", blob))
 
     # ------------------------------------------------------------------
     # Field filling mechanics
