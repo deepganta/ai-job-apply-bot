@@ -4,30 +4,24 @@ from . import __version__
 from .application import JobApplicationService
 from .config import Settings
 from .indeed import IndeedDiscoveryService
-from .job_discovery import JobDiscoveryService
 from .linkedin import LinkedInDiscoveryService
 from .models import DashboardState
 from .reporting import write_summary
 from .state import deduplicate_jobs, load_state, merge_jobs, replace_job, save_state
 from .utils import utc_now
-from .vendor_workbook import load_vendors
-from .web import create_app
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="job_apply_bot",
-        description="Scan trusted vendor sites and apply to AI/ML roles.",
+        description="LinkedIn + Indeed + LinkedIn-posts AI/ML job automation.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    serve_parser = subparsers.add_parser("serve", help="Run the local web interface.")
-    serve_parser.add_argument("--host", default="127.0.0.1")
-    serve_parser.add_argument("--port", type=int, default=5050)
-
-    scan_parser = subparsers.add_parser("scan", help="Scan vendors and manual URLs for eligible jobs.")
-    scan_parser.add_argument("--vendor-limit", type=int, default=25)
+    dashboard_serve_parser = subparsers.add_parser("dashboard-serve", help="Serve the static dashboard.html locally.")
+    dashboard_serve_parser.add_argument("--host", default="127.0.0.1")
+    dashboard_serve_parser.add_argument("--port", type=int, default=8000)
 
     indeed_login_parser = subparsers.add_parser("indeed-login", help="Open a persistent browser for Indeed sign-in.")
     indeed_login_parser.add_argument("--url", default="https://www.indeed.com/")
@@ -103,13 +97,20 @@ def main() -> None:
     posts_parser.add_argument("--scrolls", type=int, default=4, help="Scroll passes per query (default 4).")
 
     args = parser.parse_args()
-
-    if args.command == "serve":
-        app = create_app()
-        app.run(host=args.host, port=args.port, debug=False)
-        return
-
     settings = Settings.from_env()
+
+    if args.command == "dashboard-serve":
+        import os
+        from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+        os.chdir(settings.root_dir)
+        server = ThreadingHTTPServer((args.host, args.port), SimpleHTTPRequestHandler)
+        print(f"Serving static dashboard at http://{args.host}:{args.port}/dashboard.html")
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        return
 
     if args.command == "indeed-login":
         IndeedDiscoveryService(settings).bootstrap_session(url=args.url)
@@ -127,8 +128,6 @@ def main() -> None:
         print(extension_path(settings))
         return
 
-    vendors = load_vendors(settings.vendor_workbook_path) if settings.vendor_workbook_path.exists() else []
-
     if args.command == "chrome-mcp-server":
         try:
             from .chrome_mcp_server import run_server
@@ -136,20 +135,6 @@ def main() -> None:
             run_server(settings, host=args.host or settings.chrome_mcp_host, port=args.port or settings.chrome_mcp_port)
         except KeyboardInterrupt:
             return
-        return
-
-    if args.command == "scan":
-        discovery = JobDiscoveryService(settings, vendors)
-        jobs = discovery.discover(vendor_limit=args.vendor_limit)
-        previous_state = load_state(settings.state_path)
-        state = DashboardState(
-            vendors_loaded=len(vendors),
-            last_scan_at=utc_now().replace(microsecond=0).isoformat(),
-            jobs=merge_jobs(previous_state.jobs, jobs),
-        )
-        save_state(settings.state_path, state)
-        write_summary(settings, state.jobs)
-        print(f"Scanned {len(vendors[:args.vendor_limit])} vendors. Found {len(jobs)} jobs.")
         return
 
     if args.command == "indeed-scan":
@@ -184,13 +169,13 @@ def main() -> None:
         previous_state = load_state(settings.indeed_state_path)
         deduped = deduplicate_jobs(merge_jobs(previous_state.jobs, jobs))
         state = DashboardState(
-            vendors_loaded=len(vendors),
+            vendors_loaded=0,
             last_scan_at=utc_now().replace(microsecond=0).isoformat(),
             jobs=deduped,
         )
         save_state(settings.indeed_state_path, state)
         # Rebuild combined dashboard
-        _rebuild_dashboard(settings, vendors)
+        _rebuild_dashboard(settings)
         print(f"Scanned Indeed for '{query}' in '{location or 'all locations'}'. Found {len(jobs)} jobs (deduped to {len(deduped)}).")
         return
 
@@ -242,13 +227,13 @@ def main() -> None:
         previous_state = load_state(settings.linkedin_state_path)
         deduped = deduplicate_jobs(merge_jobs(previous_state.jobs, jobs))
         state = DashboardState(
-            vendors_loaded=len(vendors),
+            vendors_loaded=0,
             last_scan_at=utc_now().replace(microsecond=0).isoformat(),
             jobs=deduped,
         )
         save_state(settings.linkedin_state_path, state)
         # Rebuild combined dashboard
-        _rebuild_dashboard(settings, vendors)
+        _rebuild_dashboard(settings)
         print(f"Scanned LinkedIn for '{query}' in '{location or 'all locations'}'. Found {len(jobs)} jobs (deduped to {len(deduped)}).")
         return
 
@@ -390,13 +375,13 @@ def _compose_outreach_email(lead, profile: dict) -> tuple:
     return subject, body
 
 
-def _rebuild_dashboard(settings, vendors) -> None:
+def _rebuild_dashboard(settings) -> None:
     """Merge indeed_state.json + linkedin_state.json → dashboard_state.json (deduped)."""
     indeed_state = load_state(settings.indeed_state_path)
     linkedin_state = load_state(settings.linkedin_state_path)
     all_jobs = deduplicate_jobs(indeed_state.jobs + linkedin_state.jobs)
     combined = DashboardState(
-        vendors_loaded=len(vendors),
+        vendors_loaded=0,
         last_scan_at=utc_now().replace(microsecond=0).isoformat(),
         jobs=all_jobs,
     )

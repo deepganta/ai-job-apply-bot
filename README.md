@@ -1,19 +1,17 @@
 # AI/ML Job Apply Bot
 
-Current baseline: `v0.5.1`
+Current baseline: `v0.5.3`
 
 Release note: [docs/releases/linkedin-verified-baseline-v0.3.0.md](docs/releases/linkedin-verified-baseline-v0.3.0.md)
 
 Changelog: [CHANGELOG.md](CHANGELOG.md)
 
-This project creates a local interface for scanning trusted vendor sites, Indeed, and LinkedIn, filtering to AI/ML jobs that match your saved criteria, and applying with your saved profile, resume, and answer rules.
+This project automates LinkedIn + Indeed AI/ML contract job search and Easy Apply workflows using your saved criteria, profile, resume, and answer rules.
 
 ## What It Does
 
-- Loads trusted vendors from [White_Vendors_List.xlsx](/path/to/White_Vendors_List.xlsx).
 - Loads Indeed search defaults from [config/indeed_search.json](config/indeed_search.json).
 - Loads LinkedIn search defaults from [config/linkedin_search.json](config/linkedin_search.json).
-- Scans vendor websites plus any direct job URLs you paste into [config/job_urls.txt](config/job_urls.txt).
 - Scans Indeed in a persistent browser profile so you can log in once and reuse the same session.
 - Scans LinkedIn from the visible results page and keeps only jobs that pass the saved criteria.
 - Keeps only roles that look AI/ML-focused and were posted within the configured recent window.
@@ -23,6 +21,7 @@ This project creates a local interface for scanning trusted vendor sites, Indeed
 - Uses a Chrome-MCP fast path for LinkedIn when the bridge and extension are connected, then falls back to Playwright if the bridge is unavailable.
 - Uses [config/question_answers.json](config/question_answers.json) for recurring screening questions.
 - Saves results to [runs/latest_results.json](runs/latest_results.json) and [runs/latest_results.md](runs/latest_results.md).
+- Powers the static dashboard [dashboard.html](dashboard.html), which auto-refreshes from the latest `runs/YYYY-MM-DD` state.
 
 ## Replicating This for Yourself
 
@@ -168,7 +167,6 @@ JOB_BOT_RESUME_PATH=/path/to/your/resume.pdf
 
 ## Limits
 
-- Arbitrary vendor sites are inconsistent. The scanner is best-effort and works best when vendor pages expose job links or structured job metadata.
 - Auto-submit skips forms when required answers are missing or confirmation is ambiguous.
 - Indeed may require manual sign-in or verification in the visible browser. The bot waits for you, but it does not bypass those checks.
 - LinkedIn automation follows a stricter standard workflow; only a LinkedIn-confirmed apply counts as submitted. The workflow is documented in [docs/linkedin_standard_workflow.md](docs/linkedin_standard_workflow.md).
@@ -200,25 +198,22 @@ python3 -m venv .venv
 
 5. Add recurring screening answers to [config/question_answers.json](config/question_answers.json).
 
-6. Optionally paste direct job URLs into [config/job_urls.txt](config/job_urls.txt).
+6. Optional: tune the default Indeed query in [config/indeed_search.json](config/indeed_search.json).
 
-7. Optional: tune the default Indeed query in [config/indeed_search.json](config/indeed_search.json).
-
-## Run The Interface
+## Run Dashboard
 
 ```bash
-./.venv/bin/python -m job_apply_bot serve
+./.venv/bin/python -m job_apply_bot dashboard-serve --host 127.0.0.1 --port 8000
 ```
 
-Open [http://127.0.0.1:5050](http://127.0.0.1:5050).
+Open [http://127.0.0.1:8000/dashboard.html](http://127.0.0.1:8000/dashboard.html).
 
 ## Interface Workflow
 
-1. For vendor pages, click `Start Vendor Scan`.
-2. For Indeed, fill the `Indeed Search` form and click `Start Indeed Scan`.
-3. Review the discovered jobs list.
-4. Click `Apply` for a single eligible job, or `Apply Eligible Jobs` for a batch.
-5. Check the submitted jobs list and the saved summaries under [runs](runs).
+1. Run LinkedIn scan (`linkedin-scan`) and/or Indeed scan (`indeed-scan`).
+2. Review the dashboard at [dashboard.html](dashboard.html) (served via local HTTP).
+3. Run `apply` for selected jobs (`--job-id`) or batch (`--all`).
+4. Check submitted/review-required statuses and screenshots under [runs](runs).
 
 ## Indeed Session Prep
 
@@ -232,16 +227,16 @@ After login, close the command when prompted. Future scans and applies will reus
 
 ## Terminal Commands
 
-Scan without starting the UI:
-
-```bash
-./.venv/bin/python -m job_apply_bot scan --vendor-limit 25
-```
-
 Scan Indeed without starting the UI:
 
 ```bash
 ./.venv/bin/python -m job_apply_bot indeed-scan --query "AI Engineer" --location "United States"
+```
+
+Scan LinkedIn without starting the UI:
+
+```bash
+./.venv/bin/python -m job_apply_bot linkedin-scan --query "AI Engineer" --location "United States"
 ```
 
 Apply all currently eligible jobs in the saved dashboard state:
@@ -310,7 +305,7 @@ Files:
 - [docs/chrome_mcp_server.md](docs/chrome_mcp_server.md)
 - [docs/chrome_mcp_test_plan.md](docs/chrome_mcp_test_plan.md)
 - [docs/chrome_mcp_benchmark.md](docs/chrome_mcp_benchmark.md)
-- [chrome_mcp/extension/manifest.json](chrome_mcp/extension/manifest.json)
+- [job_apply_bot/chrome_mcp_extension/manifest.json](job_apply_bot/chrome_mcp_extension/manifest.json)
 - [job_apply_bot/chrome_mcp_client.py](job_apply_bot/chrome_mcp_client.py)
 - [job_apply_bot/apply/linkedin_bridge.py](job_apply_bot/apply/linkedin_bridge.py)
 - [job_apply_bot/chrome_mcp_server.py](job_apply_bot/chrome_mcp_server.py)
@@ -408,3 +403,9 @@ Benchmark the live bridge against the current LinkedIn tab:
 Built by [Deep Aman Ganta](https://github.com/deepganta).
 
 AI eligibility screening and answer selection powered by [Claude](https://claude.ai) (Anthropic) — used as an embedded API component for job description analysis and form question handling.
+
+---
+
+## Legacy Workflow
+
+Legacy vendor-workbook + Flask dashboard workflow was moved to [legacy_vendor_workflow](legacy_vendor_workflow) so it no longer overlaps with the active LinkedIn/Indeed/posts flow.

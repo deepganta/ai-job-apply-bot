@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.3 - 2026-04-06
+
+Chrome MCP location cleanup and repo clarity pass.
+
+- Moved Chrome extension assets from top-level `chrome_mcp/extension` into [job_apply_bot/chrome_mcp_extension](job_apply_bot/chrome_mcp_extension) so active Chrome MCP code and extension live in one place.
+- Updated default extension path in [job_apply_bot/config.py](job_apply_bot/config.py) to the new in-package location.
+- Updated Chrome MCP docs and README path references to the consolidated extension directory.
+- Removed the duplicate top-level `chrome_mcp` folder to eliminate workflow confusion.
+
+## 0.5.2 - 2026-04-06
+
+Workflow split cleanup and dashboard alignment.
+
+- Separated legacy vendor-workbook + Flask dashboard workflow into [legacy_vendor_workflow](legacy_vendor_workflow).
+- Removed legacy `serve`/`scan` command overlap from the main CLI and added `dashboard-serve` for the active static dashboard flow.
+- Updated [dashboard.html](dashboard.html) to auto-discover the latest dated run folder and refresh every 30 seconds.
+- Updated docs to focus on active LinkedIn/Indeed scan + apply + LinkedIn posts/email workflow and documented legacy isolation.
+
 ## 0.5.1 - 2026-04-06
 
 Resume-lock safety patch and LinkedIn apply flow hardening.

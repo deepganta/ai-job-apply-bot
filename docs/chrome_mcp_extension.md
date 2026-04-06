@@ -4,9 +4,9 @@ This directory contains a minimal Manifest V3 extension that behaves like a brow
 
 ## Files
 
-- [manifest.json](chrome_mcp/extension/manifest.json)
-- [service_worker.js](chrome_mcp/extension/service_worker.js)
-- [content_script.js](chrome_mcp/extension/content_script.js)
+- [manifest.json](../job_apply_bot/chrome_mcp_extension/manifest.json)
+- [service_worker.js](../job_apply_bot/chrome_mcp_extension/service_worker.js)
+- [content_script.js](../job_apply_bot/chrome_mcp_extension/content_script.js)
 
 ## Roles
 

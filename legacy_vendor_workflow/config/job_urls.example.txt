@@ -1,0 +1,2 @@
+# Legacy placeholder only.
+# Add manual URLs here if you ever reactivate the legacy workflow.

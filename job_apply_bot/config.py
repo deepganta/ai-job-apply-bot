@@ -21,9 +21,7 @@ def _bool(name: str, default: bool) -> bool:
 class Settings:
     root_dir: Path
     resume_path: Path
-    vendor_workbook_path: Path
     profile_path: Path
-    job_urls_path: Path
     indeed_search_path: Path
     linkedin_search_path: Path
     question_answers_path: Path
@@ -45,7 +43,6 @@ class Settings:
     linkedin_state_path: Path
     summary_json_path: Path
     summary_markdown_path: Path
-    career_pages_path: Path
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -55,11 +52,7 @@ class Settings:
         return cls(
             root_dir=root_dir,
             resume_path=Path(os.getenv("JOB_BOT_RESUME_PATH", root_dir / "config" / "resume.pdf")),
-            vendor_workbook_path=Path(
-                os.getenv("JOB_BOT_VENDOR_WORKBOOK_PATH", root_dir / "config" / "White_Vendors_List.xlsx")
-            ),
             profile_path=Path(os.getenv("JOB_BOT_PROFILE_PATH", root_dir / "config" / "candidate_profile.json")),
-            job_urls_path=Path(os.getenv("JOB_BOT_JOB_URLS_PATH", root_dir / "config" / "job_urls.txt")),
             indeed_search_path=Path(os.getenv("JOB_BOT_INDEED_SEARCH_PATH", root_dir / "config" / "indeed_search.json")),
             linkedin_search_path=Path(
                 os.getenv("JOB_BOT_LINKEDIN_SEARCH_PATH", root_dir / "config" / "linkedin_search.json")
@@ -80,14 +73,13 @@ class Settings:
             chrome_mcp_host=os.getenv("JOB_BOT_CHROME_MCP_HOST", "127.0.0.1").strip() or "127.0.0.1",
             chrome_mcp_port=int(os.getenv("JOB_BOT_CHROME_MCP_PORT", "8765")),
             chrome_mcp_extension_dir=Path(
-                os.getenv("JOB_BOT_CHROME_MCP_EXTENSION_DIR", root_dir / "chrome_mcp" / "extension")
+                os.getenv("JOB_BOT_CHROME_MCP_EXTENSION_DIR", root_dir / "job_apply_bot" / "chrome_mcp_extension")
             ),
             state_path=output_dir / "dashboard_state.json",
             indeed_state_path=output_dir / "indeed_state.json",
             linkedin_state_path=output_dir / "linkedin_state.json",
             summary_json_path=output_dir / "latest_results.json",
             summary_markdown_path=output_dir / "latest_results.md",
-            career_pages_path=output_dir / "career_pages.json",
         )
 
     def load_profile(self) -> dict:

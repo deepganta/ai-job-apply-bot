@@ -120,8 +120,8 @@
 
   <!-- Tabs -->
   <div class="tabs">
-    <div class="tab active" onclick="switchDay('today')" id="tab-today">📅 Today (Apr 3)</div>
-    <div class="tab" onclick="switchDay('yesterday')" id="tab-yesterday">📅 Yesterday (Apr 2)</div>
+    <div class="tab active" onclick="switchDay('today')" id="tab-today">📅 Today</div>
+    <div class="tab" onclick="switchDay('yesterday')" id="tab-yesterday">📅 Previous</div>
   </div>
 
   <!-- Filters -->
@@ -160,18 +160,74 @@
 let allJobs = [];
 let currentDay = 'today';
 let currentFilter = 'all';
+let pathsResolved = false;
 
 const STATE_PATHS = {
-  today: 'runs/2026-04-03/dashboard_state.json',
-  yesterday: 'runs/2026-04-02/dashboard_state.json',
+  today: 'runs/dashboard_state.json',
+  yesterday: '',
 };
+const RUN_DATES = { today: '', yesterday: '' };
+
+function _formatTabDate(dayKey) {
+  const iso = RUN_DATES[dayKey];
+  if (!iso) return dayKey === 'today' ? '📅 Today' : '📅 Previous';
+  const d = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return dayKey === 'today' ? '📅 Today' : '📅 Previous';
+  const month = d.toLocaleString([], { month: 'short' });
+  const date = d.getDate();
+  return dayKey === 'today' ? `📅 Today (${month} ${date})` : `📅 Previous (${month} ${date})`;
+}
+
+function _applyTabLabels() {
+  const todayTab = document.getElementById('tab-today');
+  const prevTab = document.getElementById('tab-yesterday');
+  if (todayTab) todayTab.textContent = _formatTabDate('today');
+  if (prevTab) {
+    prevTab.textContent = _formatTabDate('yesterday');
+    prevTab.style.display = STATE_PATHS.yesterday ? '' : 'none';
+  }
+}
+
+async function resolveStatePaths() {
+  if (pathsResolved) return;
+  try {
+    const resp = await fetch('runs/?t=' + Date.now());
+    if (resp.ok) {
+      const html = await resp.text();
+      const dates = [...html.matchAll(/href="(\d{4}-\d{2}-\d{2})\/"/g)].map(m => m[1]);
+      const sorted = [...new Set(dates)].sort((a, b) => b.localeCompare(a));
+      if (sorted.length > 0) {
+        RUN_DATES.today = sorted[0];
+        STATE_PATHS.today = `runs/${sorted[0]}/dashboard_state.json`;
+      }
+      if (sorted.length > 1) {
+        RUN_DATES.yesterday = sorted[1];
+        STATE_PATHS.yesterday = `runs/${sorted[1]}/dashboard_state.json`;
+      } else {
+        RUN_DATES.yesterday = '';
+        STATE_PATHS.yesterday = '';
+      }
+    }
+  } catch (_) {
+    // Fall back to runs/dashboard_state.json when directory listing is unavailable.
+  }
+  pathsResolved = true;
+  _applyTabLabels();
+}
 
 async function loadAll() {
+  await resolveStatePaths();
   await loadDay(currentDay);
 }
 
 async function loadDay(day) {
-  const path = STATE_PATHS[day];
+  const path = STATE_PATHS[day] || (day === 'today' ? 'runs/dashboard_state.json' : '');
+  if (!path) {
+    allJobs = [];
+    updateStats();
+    renderTable();
+    return;
+  }
   try {
     // Use XMLHttpRequest to load local file (works when served via local server)
     const resp = await fetch(path + '?t=' + Date.now());
@@ -278,8 +334,8 @@ function renderTable() {
   }).join('');
 }
 
-// Auto-refresh every 15 seconds
-setInterval(loadAll, 15000);
+// Auto-refresh every 30 seconds
+setInterval(loadAll, 30000);
 
 // Initial load
 loadAll();

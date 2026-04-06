@@ -27,7 +27,7 @@ Run the bridge:
 The default extension directory is:
 
 ```text
-chrome_mcp/extension
+job_apply_bot/chrome_mcp_extension
 ```
 
 You can override the bridge host and port with:

@@ -17,9 +17,9 @@ Build a local Chrome extension plus Python bridge that gives the bot a browser-n
 
 Location:
 
-- `chrome_mcp/extension/manifest.json`
-- `chrome_mcp/extension/service_worker.js`
-- `chrome_mcp/extension/content_script.js`
+- `job_apply_bot/chrome_mcp_extension/manifest.json`
+- `job_apply_bot/chrome_mcp_extension/service_worker.js`
+- `job_apply_bot/chrome_mcp_extension/content_script.js`
 
 Responsibilities:
 
