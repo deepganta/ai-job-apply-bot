@@ -12,7 +12,11 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote_plus
 
+from playwright.sync_api import sync_playwright
+
+from .browser import open_browser_session
 from .chrome_mcp_client import ChromeMcpClient
+from .config import Settings
 from .eligibility import (
     BLOCKED_RESTRICTION_TOKENS,
     experience_exceeds_limit,
@@ -96,15 +100,24 @@ JOB_TOKENS = (
     "send your resume",
     "send resume",
     "interested candidates",
-    "job title:",
-    "role:",
-    "title:",
-    "position:",
-    "location:",
+    "job title",
+    "role ",
+    "title ",
+    "position ",
+    "location ",
+    "we are seeking",
+    "we're seeking",
     "experience required",
     "years of experience",
     "requirement for",
     "hiring for",
+    "key responsibilities",
+    "required skills",
+    "job description",
+    "rate on c2c",
+    "hr on c2c",
+    "/hr c2c",
+    "on c2c",
 )
 
 # If ANY of these appear → no C2C → skip
@@ -318,24 +331,35 @@ def _expand_all_posts(client: ChromeMcpClient, tab_id: str) -> int:
     return clicked
 
 
-def _scroll_down(client: ChromeMcpClient, tab_id: str, pixels: int = 2000) -> None:
-    try:
-        client.perform_action(tab_id, {"kind": "scroll", "deltaY": pixels, "x": 700, "y": 500})
-    except Exception:
-        pass
-    time.sleep(2.5)
+def _scroll_down(client: ChromeMcpClient, tab_id: str, pixels: int = 3000) -> None:
+    # LinkedIn CSP blocks eval-based JS, so use perform_action scroll only.
+    # Scroll multiple smaller steps to trigger LinkedIn's lazy-load observer.
+    steps = max(1, pixels // 1000)
+    for _ in range(steps):
+        try:
+            client.perform_action(tab_id, {"kind": "scroll", "deltaY": 1000, "x": 700, "y": 500})
+        except Exception:
+            pass
+        time.sleep(0.4)
+    time.sleep(3.0)  # wait for LinkedIn to lazy-load new posts into DOM
 
 
-def _get_page_text(client: ChromeMcpClient, tab_id: str, limit: int = 40000) -> str:
+def _get_page_text(client: ChromeMcpClient, tab_id: str, limit: int = 200000) -> str:
     """Fetch full visible page text via page.text with a high limit."""
     try:
-        response = client.request("page.text", tabId=tab_id, limit=limit)
-        payload = response.get("payload", {})
-        return payload.get("text", "") or payload.get("visibleText", "") or ""
+        # get_page_text returns {"ok": bool, "text": str, "url": str, "title": str}
+        result = client.get_page_text(tab_id, limit=limit)
+        text = result.get("text", "") if isinstance(result, dict) else str(result)
+        if text:
+            return text
     except Exception:
-        # Fallback: use collect_page with high text limit
+        pass
+    # Fallback: use collect_page
+    try:
         payload = client.collect_page(tab_id, text_limit=limit)
         return payload.get("visibleTextExcerpt", "")
+    except Exception:
+        return ""
 
 
 def _parse_posts_from_text(page_text: str, page_url: str) -> List[Dict[str, str]]:
@@ -391,82 +415,211 @@ def _parse_posts_from_text(page_text: str, page_url: str) -> List[Dict[str, str]
     return posts
 
 
+_SEE_MORE_JS = """
+(function() {
+    // Cast a wide net for every "see more" / "…more" variant LinkedIn uses
+    var selectors = [
+        'button[aria-label*="see more"]',
+        'button[aria-label*="See more"]',
+        'span[role="button"]',
+        '.feed-shared-inline-show-more-text__see-more-less-toggle',
+        '.see-more-less-html__link',
+    ];
+    var clicked = 0;
+    selectors.forEach(function(sel) {
+        document.querySelectorAll(sel).forEach(function(btn) {
+            var t = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+            if (t === '…more' || t === '...more' || t.includes('see more') || t.includes('show more')) {
+                try { btn.click(); clicked++; } catch(e) {}
+            }
+        });
+    });
+    return clicked;
+})()
+"""
+
+
+def _expand_posts_playwright(page: Any) -> int:
+    """Click all 'see more' buttons on the page so full post text (incl. emails) is visible."""
+    try:
+        clicked = page.evaluate(_SEE_MORE_JS)
+        if clicked:
+            page.wait_for_timeout(600)
+        return clicked or 0
+    except Exception:
+        return 0
+
+
+def _oldest_post_minutes(page_text: str) -> int:
+    """
+    Parse the oldest timestamp seen in the current page text.
+    Returns age in minutes (9999 if none found).
+    """
+    oldest = 0
+    for m in re.finditer(r'\b(\d+)\s*(m|h|d)\b', page_text[:80000]):
+        val, unit = int(m.group(1)), m.group(2)
+        if unit == 'm':
+            mins = val
+        elif unit == 'h':
+            mins = val * 60
+        else:
+            mins = val * 1440
+        if mins > oldest:
+            oldest = mins
+    return oldest if oldest else 9999
+
+
+_SCROLL_JS = """
+() => {
+    // LinkedIn feed uses a custom scrollable container (not window).
+    // Try the known selectors in order; fall back to body / window.
+    var selectors = [
+        '.scaffold-finite-scroll__content',
+        '.core-rail',
+        'main',
+    ];
+    for (var i = 0; i < selectors.length; i++) {
+        var el = document.querySelector(selectors[i]);
+        if (el && el.scrollHeight > el.clientHeight + 10) {
+            el.scrollBy(0, 3000);
+            return selectors[i];
+        }
+    }
+    document.body.scrollBy(0, 3000);
+    window.scrollBy(0, 3000);
+    return 'body/window';
+}
+"""
+
+
+def _playwright_scroll_and_read(page: Any, max_hours: int = 2, max_passes: int = 30) -> str:
+    """
+    Scroll LinkedIn feed until posts >= max_hours old appear (or no new content loads).
+    Expands all 'see more' buttons before each read so emails at the bottom are captured.
+    """
+    target_minutes = max_hours * 60
+    max_stagnant = 6   # stop if page doesn't grow for this many consecutive passes
+
+    prev_length = 0
+    stagnant = 0
+    best_text = ""
+
+    for pass_num in range(max_passes):
+        # Scroll the LinkedIn feed container via JS (mouse.wheel at (0,0) hits the navbar,
+        # not the scrollable feed — so we target the feed container directly).
+        try:
+            page.evaluate(_SCROLL_JS)
+        except Exception:
+            pass
+        # Also move mouse to the feed area and wheel-scroll as a backup trigger
+        page.mouse.move(760, 600)
+        page.mouse.wheel(0, 3000)
+        page.wait_for_timeout(3000)
+
+        # Expand all truncated posts so we capture emails at the bottom
+        _expand_posts_playwright(page)
+
+        # Read full DOM text
+        try:
+            text = page.evaluate("document.body.innerText") or ""
+        except Exception:
+            text = ""
+
+        if len(text) > len(best_text):
+            best_text = text
+
+        # Check if we've reached old enough posts
+        oldest = _oldest_post_minutes(text)
+        new_length = len(text)
+
+        grew = new_length > prev_length + 200  # require meaningful growth (>200 chars)
+        if grew:
+            stagnant = 0
+        else:
+            stagnant += 1
+        prev_length = new_length
+
+        print(f"  [scroll {pass_num+1}] page_len={new_length} oldest={oldest}m stagnant={stagnant}")
+
+        if oldest >= target_minutes:
+            break          # reached posts old enough — done
+        if stagnant >= max_stagnant:
+            print(f"  Scroll stopped: no new content after {max_stagnant} passes (oldest={oldest}m)")
+            break          # nothing new loading — done
+
+    return best_text
+
+
 def scan_linkedin_posts(
     queries: Optional[List[str]] = None,
     max_hours: int = MAX_HOURS,
     scroll_passes: int = SCROLL_PASSES,
     ws_url: str = "ws://127.0.0.1:8765",
+    settings: Optional[Any] = None,
 ) -> List[LinkedInPostLead]:
     """
     Scan LinkedIn feed posts for AI/ML C2C job opportunities.
+    Uses Playwright for proper scrolling (bypasses LinkedIn's custom scroll container).
     Returns a list of LinkedInPostLead objects, both eligible and skipped.
     """
     if queries is None:
         queries = DEFAULT_SEARCH_QUERIES
+    if settings is None:
+        settings = Settings()
 
     all_leads: List[LinkedInPostLead] = []
     seen_keys: set = set()
 
-    for query in queries:
-        print(f"\nSearching posts for: {query!r}")
-        url = _search_url(query)
+    with sync_playwright() as playwright:
+        session = open_browser_session(playwright, settings)
+        page = session.context.new_page()
 
-        # Each query gets its own connection to avoid WebSocket keepalive timeouts
-        try:
-            with ChromeMcpClient(ws_url) as client:
-                tabs = client.list_tabs()
-                linkedin_tab = next(
-                    (t for t in tabs if "linkedin.com" in t.url),
-                    tabs[0] if tabs else None,
-                )
-                if linkedin_tab is None:
-                    print("  ERROR: No Chrome tab found.")
+        for query in queries:
+            print(f"\nSearching posts for: {query!r}")
+            url = _search_url(query)
+
+            try:
+                page.goto(url, wait_until="domcontentloaded", timeout=20000)
+                page.wait_for_timeout(5000)  # let feed render
+
+                # Warn if not logged in (LinkedIn redirects to authwall)
+                current_url = page.url
+                if "authwall" in current_url or "login" in current_url or "checkpoint" in current_url:
+                    print(f"  WARNING: LinkedIn redirected to login page ({current_url}).")
+                    print(f"  The Playwright browser is not logged into LinkedIn.")
+                    print(f"  To fix: set JOB_BOT_CDP_URL=http://127.0.0.1:9222 in .env and")
+                    print(f"  launch Chrome with --remote-debugging-port=9222, or run")
+                    print(f"  'linkedin-login' to create a LinkedIn-specific browser profile.")
                     continue
 
-                tab_id = linkedin_tab.id
-                client.navigate(tab_id, url)
-                time.sleep(4.0)  # wait for page load + React render
-
                 post_count_before = len(all_leads)
-                stop_early = False
 
-                for pass_num in range(scroll_passes + 1):
-                    # Expand all truncated posts before reading
-                    expanded = _expand_all_posts(client, tab_id)
-                    if expanded:
-                        print(f"  Expanded {expanded} 'see more' buttons")
-                    page_text = _get_page_text(client, tab_id)
-                    raw_posts = _parse_posts_from_text(page_text, url)
+                # Scroll until posts >= max_hours old appear
+                page_text = _playwright_scroll_and_read(page, max_hours=max_hours)
+                raw_posts = _parse_posts_from_text(page_text, url)
 
-                    new_this_pass = 0
-                    oldest_age = 0
-                    for raw in raw_posts:
-                        key = raw.get("text", "")[:120]
-                        if key in seen_keys:
-                            continue
-                        seen_keys.add(key)
+                new_this_pass = 0
+                oldest_age = 0
+                for raw in raw_posts:
+                    key = raw.get("text", "")[:120]
+                    if key in seen_keys:
+                        continue
+                    seen_keys.add(key)
 
-                        lead = _analyze_post(raw, max_hours=max_hours)
-                        all_leads.append(lead)
-                        new_this_pass += 1
-                        if lead.age_minutes < 9999:
-                            oldest_age = max(oldest_age, lead.age_minutes)
+                    lead = _analyze_post(raw, max_hours=max_hours)
+                    all_leads.append(lead)
+                    new_this_pass += 1
+                    if lead.age_minutes < 9999:
+                        oldest_age = max(oldest_age, lead.age_minutes)
 
-                    age_label = f"{oldest_age}m" if oldest_age else "unknown"
-                    print(f"  Pass {pass_num}: {new_this_pass} new posts | oldest {age_label}")
-
-                    if oldest_age > max_hours * 60 and pass_num > 0:
-                        print(f"  Reached posts older than {max_hours}h — stopping")
-                        stop_early = True
-                        break
-
-                    if pass_num < scroll_passes and not stop_early:
-                        _scroll_down(client, tab_id)
-
+                age_label = f"{oldest_age}m" if oldest_age else "unknown"
                 added = len(all_leads) - post_count_before
-                print(f"  Query complete — {added} posts collected")
-        except Exception as exc:
-            print(f"  Query failed: {exc}")
+                print(f"  Found {added} posts | oldest {age_label}")
+
+            except Exception as exc:
+                print(f"  Query failed: {exc}")
+
+        session.close()
 
     eligible = [l for l in all_leads if l.eligible]
     print(f"\nTotal posts scanned: {len(all_leads)}")

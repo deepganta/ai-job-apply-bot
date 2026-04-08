@@ -4,7 +4,7 @@ from . import __version__
 from .application import JobApplicationService
 from .config import Settings
 from .indeed import IndeedDiscoveryService
-from .linkedin import LinkedInDiscoveryService
+from .linkedin import DEFAULT_LINKEDIN_SEARCH_QUERIES, MAX_LINKEDIN_SCAN_PAGES, LinkedInDiscoveryService
 from .models import DashboardState
 from .reporting import write_summary
 from .state import deduplicate_jobs, load_state, merge_jobs, replace_job, save_state
@@ -181,11 +181,18 @@ def main() -> None:
 
     if args.command == "linkedin-scan":
         saved_search = settings.load_linkedin_search()
-        query = args.query or saved_search.get("query", "")
+        query_arg = (args.query or "").strip()
+        if query_arg:
+            queries = [item.strip() for item in query_arg.split(",") if item.strip()]
+        else:
+            queries = list(DEFAULT_LINKEDIN_SEARCH_QUERIES)
         location = args.location or saved_search.get("location", "")
-        max_pages = args.max_pages or int(saved_search.get("max_pages", 2) or 2)
-        max_pages = max(1, min(max_pages, 3))
+        max_pages = args.max_pages or int(saved_search.get("max_pages", MAX_LINKEDIN_SCAN_PAGES) or MAX_LINKEDIN_SCAN_PAGES)
+        max_pages = max(1, min(max_pages, MAX_LINKEDIN_SCAN_PAGES))
         max_jobs = args.max_jobs or int(saved_search.get("max_jobs", 20) or 20)
+        # Ensure we can capture all jobs from the first N pages after scrolling each
+        # results list to the bottom (the extractor returns up to ~80 cards per page).
+        max_jobs = max(max_jobs, max_pages * 80)
         recency_hours = int(saved_search.get("recency_hours", 168) or 168)
         easy_apply_only = not args.include_non_easy_apply
         if not args.include_non_easy_apply:
@@ -201,7 +208,7 @@ def main() -> None:
 
         settings.save_linkedin_search(
             {
-                "query": query,
+                "query": ", ".join(queries),
                 "location": location,
                 "max_pages": max_pages,
                 "max_jobs": max_jobs,
@@ -214,17 +221,24 @@ def main() -> None:
         )
 
         discovery = LinkedInDiscoveryService(settings)
-        jobs = discovery.discover(
-            query=query,
-            location=location,
-            max_pages=max_pages,
-            max_jobs=max_jobs,
-            recency_hours=recency_hours,
-            easy_apply_only=easy_apply_only,
-            contract_only=contract_only,
-            remote_only=remote_only,
-            experience_levels=levels,
-        )
+        jobs = []
+        per_query_counts = []
+        for query in queries:
+            query_jobs = discovery.discover(
+                query=query,
+                location=location,
+                max_pages=max_pages,
+                max_jobs=max_jobs,
+                recency_hours=recency_hours,
+                easy_apply_only=easy_apply_only,
+                contract_only=contract_only,
+                remote_only=remote_only,
+                experience_levels=levels,
+            )
+            jobs.extend(query_jobs)
+            per_query_counts.append((query, len(query_jobs)))
+
+        jobs = deduplicate_jobs(jobs)
         previous_state = load_state(settings.linkedin_state_path)
         deduped = deduplicate_jobs(merge_jobs(previous_state.jobs, jobs))
         state = DashboardState(
@@ -235,7 +249,12 @@ def main() -> None:
         save_state(settings.linkedin_state_path, state)
         # Rebuild combined dashboard
         _rebuild_dashboard(settings)
-        print(f"Scanned LinkedIn for '{query}' in '{location or 'all locations'}'. Found {len(jobs)} jobs (deduped to {len(deduped)}).")
+        print(
+            f"Scanned LinkedIn for {len(queries)} keyword(s) in '{location or 'all locations'}'. "
+            f"Found {len(jobs)} jobs (deduped to {len(deduped)})."
+        )
+        for query, count in per_query_counts:
+            print(f"  - {query}: {count} jobs")
         return
 
     if args.command == "apply":
@@ -278,9 +297,8 @@ def main() -> None:
         from pathlib import Path
         from .linkedin_posts import scan_linkedin_posts, DEFAULT_SEARCH_QUERIES
 
-        queries = list(DEFAULT_SEARCH_QUERIES)
-        if args.query:
-            queries.insert(0, args.query)
+        # If a specific query is passed, use ONLY that query (not the defaults)
+        queries = [args.query] if args.query else list(DEFAULT_SEARCH_QUERIES)
 
         ws_url = f"ws://{settings.chrome_mcp_host}:{settings.chrome_mcp_port}"
         leads = scan_linkedin_posts(
@@ -288,6 +306,7 @@ def main() -> None:
             max_hours=args.hours,
             scroll_passes=args.scrolls,
             ws_url=ws_url,
+            settings=settings,
         )
 
         eligible = [l for l in leads if l.eligible]

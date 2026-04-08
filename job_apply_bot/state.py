@@ -7,14 +7,16 @@ from .utils import load_json, save_json
 
 
 def _dedup_key(job: JobRecord) -> str:
-    """Canonical (company, title) key for deduplication — lowercased, punctuation stripped."""
+    """Prefer canonical job_id dedupe key; fallback to normalized (company, title)."""
     def _norm(s: str) -> str:
         return re.sub(r"[^a-z0-9 ]", "", (s or "").lower().strip())
-    return f"{_norm(job.company)}|{_norm(job.title)}"
+    if (job.job_id or "").strip():
+        return f"id:{job.job_id.strip().lower()}"
+    return f"title:{_norm(job.company)}|{_norm(job.title)}"
 
 
 def deduplicate_jobs(jobs: List[JobRecord]) -> List[JobRecord]:
-    """Keep only the first occurrence of each (company, title) pair.
+    """Keep only the first occurrence per dedupe key.
     Prefer submitted/review_required over pending duplicates."""
     priority = {"submitted": 0, "review_required": 1, "ready_to_submit": 2, "pending": 3}
     seen: dict = {}

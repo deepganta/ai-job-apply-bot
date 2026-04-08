@@ -25,13 +25,14 @@ class BrowserSession:
 
 def open_browser_session(playwright: Playwright, settings: Settings) -> BrowserSession:
     if settings.browser_cdp_url:
-        browser = playwright.chromium.connect_over_cdp(settings.browser_cdp_url)
-        contexts = browser.contexts
-        if not contexts:
-            raise RuntimeError(
-                f"No browser context found at {settings.browser_cdp_url}. Start Chrome with --remote-debugging-port first."
-            )
-        return BrowserSession(context=contexts[0], browser=browser, managed=False)
+        try:
+            browser = playwright.chromium.connect_over_cdp(settings.browser_cdp_url)
+            contexts = browser.contexts
+            if contexts:
+                return BrowserSession(context=contexts[0], browser=browser, managed=False)
+            print(f"[browser] CDP connected at {settings.browser_cdp_url} but no contexts found; falling back to profile.")
+        except Exception as exc:
+            print(f"[browser] CDP connect failed ({exc}); falling back to profile-based browser.")
 
     launch_options = {"headless": settings.headless}
     if settings.browser_channel:

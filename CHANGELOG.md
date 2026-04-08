@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.4 - 2026-04-08
+
+LinkedIn scan reliability + capture accuracy update.
+
+- Updated [job_apply_bot/linkedin.py](job_apply_bot/linkedin.py) listing extraction to capture `data-job-id` shell rows (not only anchor-backed rows), reducing missed jobs on LinkedIn results pages.
+- Improved LinkedIn candidate inspection fallback in [job_apply_bot/linkedin.py](job_apply_bot/linkedin.py) so jobs with missing in-card title can still be resolved from detail pages.
+- Switched deduplication in [job_apply_bot/state.py](job_apply_bot/state.py) to prefer `job_id` keys, preventing distinct postings from collapsing when company/title are reused across locations.
+- Enhanced LinkedIn scan orchestration in [job_apply_bot/cli.py](job_apply_bot/cli.py): supports default multi-keyword runs, preserves 3-page cap, and keeps high enough max-job budget to capture full scrolled pages.
+- Added safer browser fallback behavior in [job_apply_bot/browser.py](job_apply_bot/browser.py) when CDP connects without usable contexts.
+- Expanded LinkedIn post feed scanning robustness in [job_apply_bot/linkedin_posts.py](job_apply_bot/linkedin_posts.py) with stronger scrolling/expansion and larger text capture windows.
+
 ## 0.5.3 - 2026-04-06
 
 Chrome MCP location cleanup and repo clarity pass.

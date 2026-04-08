@@ -27,14 +27,34 @@ LINKEDIN_LISTINGS_SCRIPT = """
     if (typeof value.accessibilityText === 'string') return normalize(value.accessibilityText);
     return '';
   };
+  const firstMeaningfulLine = (value) => {
+    const lines = String(value || '')
+      .split('\\n')
+      .map((item) => normalize(item))
+      .filter(Boolean);
+    for (const line of lines) {
+      const lowered = line.toLowerCase();
+      if (
+        lowered.includes('applicant') ||
+        lowered.includes('promoted') ||
+        lowered.includes('easy apply') ||
+        lowered.includes('reposted') ||
+        lowered.includes('ago')
+      ) {
+        continue;
+      }
+      return line;
+    }
+    return '';
+  };
 
   const jobs = [];
   const seen = new Set();
 
   const pushJob = (job) => {
     const jobId = normalize(job.jobId);
-    const title = normalize(job.title);
-    if (!jobId || !title || seen.has(jobId)) return;
+    const title = normalize(job.title) || `LinkedIn Job ${jobId}`;
+    if (!jobId || seen.has(jobId)) return;
     seen.add(jobId);
     jobs.push({
       jobId,
@@ -136,6 +156,57 @@ LINKEDIN_LISTINGS_SCRIPT = """
     });
   }
 
+  const rowSelectors = [
+    "[data-job-id]",
+    "[data-occludable-job-id]",
+    ".jobs-search-results__list-item",
+    ".job-card-container",
+  ];
+  const rows = Array.from(document.querySelectorAll(rowSelectors.join(", ")));
+  for (const row of rows) {
+    const anchor = row.querySelector("a[href*='/jobs/view/']");
+    const href = anchor?.href || "";
+    const rawJobId =
+      row.getAttribute("data-job-id") ||
+      row.getAttribute("data-occludable-job-id") ||
+      href;
+    const jobId = extractJobId(rawJobId);
+    if (!jobId) continue;
+
+    const rowText = normalize(row.innerText || row.textContent || "");
+    const title = normalize(
+      row.querySelector(
+        ".job-card-list__title, .job-card-container__link, .job-card-container__job-title, strong"
+      )?.innerText ||
+      anchor?.innerText ||
+      anchor?.textContent ||
+      firstMeaningfulLine(rowText)
+    );
+
+    pushJob({
+      jobId,
+      href,
+      title,
+      company: normalize(
+        row.querySelector(
+          ".artdeco-entity-lockup__subtitle, .job-card-container__company-name, .job-card-container__primary-description, .job-card-container__subtitle"
+        )?.innerText || ""
+      ),
+      location: normalize(
+        row.querySelector(
+          ".job-card-container__metadata-item, .job-card-container__metadata-wrapper li, .artdeco-entity-lockup__caption"
+        )?.innerText || ""
+      ),
+      postedText: normalize(
+        row.querySelector(
+          "time, .job-card-list__footer-wrapper, .job-card-container__footer-wrapper, .job-card-container__listed-time"
+        )?.innerText || ""
+      ),
+      easyApply: /easy apply/i.test(rowText),
+      cardText: rowText,
+    });
+  }
+
   return jobs.slice(0, 80);
 }
 """
@@ -220,6 +291,15 @@ LOGIN_MARKERS = (
 )
 
 MAX_LINKEDIN_SCAN_PAGES = 3
+DEFAULT_LINKEDIN_SEARCH_QUERIES = [
+    "AI engineer",
+    "LLM engineer",
+    "MLOps engineer",
+    "NLP engineer",
+    "computer vision engineer",
+    "data scientist",
+    "prompt engineer",
+]
 
 
 def build_linkedin_search_url(
@@ -400,7 +480,7 @@ class LinkedInDiscoveryService:
     ) -> Optional[JobRecord]:
         job_id = str(candidate.get("jobId", "") or "").strip()
         title = str(candidate.get("title", "") or "").strip()
-        if not job_id or not title:
+        if not job_id:
             return None
 
         detail_page = self._open_candidate_detail_page(page, candidate)
@@ -411,7 +491,7 @@ class LinkedInDiscoveryService:
             self._expand_description(detail_page)
 
             detail = self._extract_detail(detail_page)
-            full_title = str(detail.get("title", "") or title).strip()
+            full_title = str(detail.get("title", "") or title or f"LinkedIn Job {job_id}").strip()
             company = str(detail.get("company", "") or candidate.get("company", "") or "LinkedIn").strip()
             location_value = str(detail.get("location", "") or candidate.get("location", "") or "").strip()
             top_card_text = str(detail.get("topCardText", "") or "")
