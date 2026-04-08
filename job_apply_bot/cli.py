@@ -184,6 +184,7 @@ def main() -> None:
         query = args.query or saved_search.get("query", "")
         location = args.location or saved_search.get("location", "")
         max_pages = args.max_pages or int(saved_search.get("max_pages", 2) or 2)
+        max_pages = max(1, min(max_pages, 3))
         max_jobs = args.max_jobs or int(saved_search.get("max_jobs", 20) or 20)
         recency_hours = int(saved_search.get("recency_hours", 168) or 168)
         easy_apply_only = not args.include_non_easy_apply

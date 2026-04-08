@@ -219,6 +219,8 @@ LOGIN_MARKERS = (
     "join linkedin",
 )
 
+MAX_LINKEDIN_SCAN_PAGES = 3
+
 
 def build_linkedin_search_url(
     query: str,
@@ -280,6 +282,7 @@ class LinkedInDiscoveryService:
         label = self._label(query, location)
         jobs: Dict[str, JobRecord] = {}
         effective_recency_hours = max(1, int(recency_hours or self.settings.recency_hours or 168))
+        page_limit = min(max(1, int(max_pages or 1)), MAX_LINKEDIN_SCAN_PAGES)
 
         with sync_playwright() as playwright:
             session = open_browser_session(playwright, self.settings)
@@ -301,7 +304,7 @@ class LinkedInDiscoveryService:
                     ),
                 )
 
-                for page_index in range(max(1, max_pages)):
+                for page_index in range(page_limit):
                     if len(jobs) >= max_jobs:
                         break
 
@@ -336,6 +339,7 @@ class LinkedInDiscoveryService:
                         remote_only=remote_only,
                         experience_levels=experience_levels,
                     )
+                    self._scroll_results_list_to_bottom(page)
 
                     candidates = self._extract_listing_candidates(page)
                     if not candidates:
@@ -537,6 +541,85 @@ class LinkedInDiscoveryService:
         if not isinstance(payload, list):
             return []
         return [item for item in payload if isinstance(item, dict)]
+
+    def _scroll_results_list_to_bottom(self, page: Page) -> None:
+        # LinkedIn lazily loads cards in the results pane. Scroll to the bottom so
+        # extraction sees the full page, not just the initially rendered subset.
+        script = """
+async () => {
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const candidateSelectors = [
+    ".jobs-search-results-list",
+    ".jobs-search-results-list__list",
+    ".scaffold-layout__list-container",
+    ".scaffold-layout__list",
+    "[data-results-list]",
+  ];
+  const candidates = candidateSelectors
+    .map((selector) => document.querySelector(selector))
+    .filter(Boolean);
+
+  let target = null;
+  for (const node of candidates) {
+    if ((node.scrollHeight || 0) > (node.clientHeight || 0) + 20) {
+      target = node;
+      break;
+    }
+  }
+  if (!target) {
+    target = document.scrollingElement || document.documentElement;
+  }
+
+  const isWindowScrollTarget =
+    target === document.scrollingElement || target === document.documentElement || target === document.body;
+  const viewHeight = isWindowScrollTarget ? (window.innerHeight || 800) : (target.clientHeight || 800);
+  const stepSize = Math.max(Math.floor(viewHeight * 0.9), 400);
+
+  let stagnant = 0;
+  let previousCount = -1;
+  let previousHeight = -1;
+
+  for (let i = 0; i < 40; i++) {
+    if (isWindowScrollTarget) {
+      const nextY = Math.min((window.scrollY || 0) + stepSize, target.scrollHeight || 0);
+      window.scrollTo(0, nextY);
+    } else {
+      target.scrollTop = Math.min((target.scrollTop || 0) + stepSize, target.scrollHeight || 0);
+    }
+
+    await wait(250);
+
+    const count = document.querySelectorAll("a[href*='/jobs/view/']").length;
+    const height = target.scrollHeight || 0;
+    const top = isWindowScrollTarget ? (window.scrollY || 0) : (target.scrollTop || 0);
+    const currentView = isWindowScrollTarget ? (window.innerHeight || 0) : (target.clientHeight || 0);
+    const atBottom = top + currentView >= height - 8;
+
+    if (count === previousCount && height === previousHeight && atBottom) {
+      stagnant += 1;
+    } else {
+      stagnant = 0;
+    }
+
+    previousCount = count;
+    previousHeight = height;
+    if (stagnant >= 4) {
+      break;
+    }
+  }
+
+  if (isWindowScrollTarget) {
+    window.scrollTo(0, target.scrollHeight || 0);
+  } else {
+    target.scrollTop = target.scrollHeight || target.scrollTop || 0;
+  }
+  await wait(300);
+}
+"""
+        try:
+            page.evaluate(script)
+        except Error:
+            return
 
     def _extract_detail(self, page: Page) -> Dict[str, str]:
         try:
