@@ -1,8 +1,8 @@
 {
-  "query": "data scientist",
+  "query": "AI engineer",
   "location": "United States",
-  "max_pages": 5,
-  "max_jobs": 100,
+  "max_pages": 2,
+  "max_jobs": 50,
   "easy_apply_only": false,
   "recency_hours": 24
 }

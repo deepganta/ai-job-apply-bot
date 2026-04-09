@@ -1,8 +1,8 @@
 {
-  "query": "computer vision engineer",
+  "query": "prompt engineer",
   "location": "United States",
-  "max_pages": 5,
-  "max_jobs": 100,
+  "max_pages": 1,
+  "max_jobs": 80,
   "recency_hours": 24,
   "easy_apply_only": true,
   "contract_only": true,

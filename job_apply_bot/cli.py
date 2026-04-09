@@ -36,6 +36,11 @@ def main() -> None:
         action="store_true",
         help="Keep Indeed jobs that are not Easy Apply, but mark them as manual-only.",
     )
+    indeed_scan_parser.add_argument(
+        "--parity-mode",
+        action="store_true",
+        help="Return all visible Indeed SERP jobs across scanned pages without discovery-time gating.",
+    )
 
     linkedin_login_parser = subparsers.add_parser("linkedin-login", help="Open a persistent browser for LinkedIn sign-in.")
     linkedin_login_parser.add_argument("--url", default="https://www.linkedin.com/jobs/")
@@ -147,6 +152,7 @@ def main() -> None:
         easy_apply_only = not args.include_non_easy_apply
         if not args.include_non_easy_apply:
             easy_apply_only = bool(saved_search.get("easy_apply_only", True))
+        parity_mode = bool(args.parity_mode)
 
         settings.save_indeed_search(
             {
@@ -165,6 +171,7 @@ def main() -> None:
             max_pages=max_pages,
             max_jobs=max_jobs,
             easy_apply_only=easy_apply_only,
+            parity_mode=parity_mode,
         )
         previous_state = load_state(settings.indeed_state_path)
         deduped = deduplicate_jobs(merge_jobs(previous_state.jobs, jobs))
@@ -176,7 +183,11 @@ def main() -> None:
         save_state(settings.indeed_state_path, state)
         # Rebuild combined dashboard
         _rebuild_dashboard(settings)
-        print(f"Scanned Indeed for '{query}' in '{location or 'all locations'}'. Found {len(jobs)} jobs (deduped to {len(deduped)}).")
+        mode_label = "parity mode" if parity_mode else "filtered mode"
+        print(
+            f"Scanned Indeed for '{query}' in '{location or 'all locations'}' ({mode_label}). "
+            f"Found {len(jobs)} jobs (deduped to {len(deduped)})."
+        )
         return
 
     if args.command == "linkedin-scan":
