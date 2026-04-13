@@ -506,6 +506,24 @@ class ChromeMcpClient(AbstractContextManager["ChromeMcpClient"]):
             raise ChromeMcpError(f"Unexpected execute_js payload: {payload!r}")
         return payload
 
+    def scroll_feed(self, tab_id: Any, pixels: int = 3000) -> str:
+        """Scroll LinkedIn's feed container. Returns the selector that was scrolled."""
+        response = self.request("page.scroll_feed", tabId=tab_id, pixels=pixels)
+        payload = response.get("payload", {})
+        return payload.get("container", "unknown") if isinstance(payload, dict) else "unknown"
+
+    def get_body_text(self, tab_id: Any) -> str:
+        """Get full document.body.innerText with no character limit."""
+        response = self.request("page.body_text", tabId=tab_id)
+        payload = response.get("payload", {})
+        return payload.get("text", "") if isinstance(payload, dict) else ""
+
+    def expand_posts(self, tab_id: Any) -> int:
+        """Click all 'see more' buttons in LinkedIn feed. Returns number clicked."""
+        response = self.request("page.expand_posts", tabId=tab_id)
+        payload = response.get("payload", {})
+        return int(payload.get("clicked", 0)) if isinstance(payload, dict) else 0
+
     def wait_for_element(
         self,
         tab_id: Any,

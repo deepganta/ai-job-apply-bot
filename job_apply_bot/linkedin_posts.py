@@ -550,6 +550,305 @@ def _playwright_scroll_and_read(page: Any, max_hours: int = 2, max_passes: int =
     return best_text
 
 
+def _open_linkedin_session(playwright: Any, settings: Any) -> Any:
+    """
+    Open a Playwright browser session for LinkedIn posts scanning.
+    Uses a DEDICATED linkedin-profile directory (separate from the Indeed profile).
+    Uses --password-store=basic so cookies persist across runs without macOS
+    keychain encryption issues.
+    """
+    from pathlib import Path
+    from .browser import BrowserSession
+
+    linkedin_profile = Path(settings.browser_profile_dir).parent / "linkedin-profile"
+    linkedin_profile.mkdir(parents=True, exist_ok=True)
+
+    launch_args = [
+        "--password-store=basic",                      # cookies persist without keychain
+        "--use-mock-keychain",                         # no macOS keychain prompts
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-blink-features=AutomationControlled",  # hide Playwright fingerprint
+    ]
+
+    context = playwright.chromium.launch_persistent_context(
+        str(linkedin_profile),
+        channel=settings.browser_channel or "chrome",
+        headless=settings.headless,
+        viewport={"width": 1720, "height": 1200},
+        accept_downloads=True,
+        args=launch_args,
+    )
+    # Remove the navigator.webdriver flag so LinkedIn doesn't detect automation
+    context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+    return BrowserSession(context=context, browser=None, managed=True)
+
+
+def _scan_via_playwright(
+    queries: List[str],
+    max_hours: int,
+    settings: Any,
+    all_leads: List[LinkedInPostLead],
+    seen_keys: set,
+) -> None:
+    """Scan using Playwright — CDP if available, else dedicated linkedin-profile."""
+    with sync_playwright() as playwright:
+        session = open_browser_session(playwright, settings)
+        page = session.context.new_page()
+
+        for query in queries:
+            print(f"\nSearching posts for: {query!r}")
+            url = _search_url(query)
+            try:
+                page.goto(url, wait_until="domcontentloaded", timeout=20000)
+                page.wait_for_timeout(5000)
+
+                current_url = page.url
+                if "authwall" in current_url or "login" in current_url or "checkpoint" in current_url:
+                    print("  Not logged in via this session — stopping Playwright path.")
+                    session.close()
+                    return
+
+                post_count_before = len(all_leads)
+                page_text = _playwright_scroll_and_read(page, max_hours=max_hours)
+                _collect_leads(page_text, url, all_leads, seen_keys, max_hours, post_count_before)
+
+            except Exception as exc:
+                print(f"  Query failed: {exc}")
+
+        session.close()
+
+
+def _scan_via_linkedin_profile(
+    queries: List[str],
+    max_hours: int,
+    settings: Any,
+    all_leads: List[LinkedInPostLead],
+    seen_keys: set,
+) -> None:
+    """
+    Open a dedicated linkedin-profile browser. If not logged in, pause and
+    let the user log in manually (up to 3 minutes), then proceed with scanning.
+    """
+    with sync_playwright() as playwright:
+        session = _open_linkedin_session(playwright, settings)
+        page = session.context.new_page()
+
+        # Navigate to LinkedIn to check login state
+        page.goto("https://www.linkedin.com/feed/", wait_until="domcontentloaded", timeout=20000)
+        page.wait_for_timeout(3000)
+
+        current_url = page.url
+        if "authwall" in current_url or "login" in current_url or "checkpoint" in current_url:
+            print("\n" + "="*60)
+            print("  LinkedIn is not logged in in the scanner browser.")
+            print("  A browser window has opened — please log into LinkedIn now.")
+            print("  Waiting up to 3 minutes for you to complete login...")
+            print("="*60)
+
+            # Wait up to 3 minutes for the user to log in
+            deadline = time.time() + 180
+            logged_in = False
+            while time.time() < deadline:
+                time.sleep(3)
+                cur = page.url
+                if "feed" in cur or "jobs" in cur or "search" in cur:
+                    logged_in = True
+                    print("  Login detected! Proceeding with scan...")
+                    break
+                if "authwall" not in cur and "login" not in cur and "checkpoint" not in cur:
+                    logged_in = True
+                    print("  Login detected! Proceeding with scan...")
+                    break
+
+            if not logged_in:
+                print("  Login not completed in time. Run again after logging in.")
+                session.close()
+                return
+
+            # Give LinkedIn time to fully settle after login (set tokens, load feed)
+            print("  Waiting for LinkedIn to fully load post-login...")
+            page.wait_for_timeout(6000)
+
+            # Navigate back to feed and wait for it to be ready before searching
+            try:
+                page.goto("https://www.linkedin.com/feed/", wait_until="networkidle", timeout=20000)
+                page.wait_for_timeout(3000)
+            except Exception:
+                page.wait_for_timeout(3000)
+
+        # Now scan all queries in the same session
+        for query in queries:
+            print(f"\nSearching posts for: {query!r}")
+            url = _search_url(query)
+            try:
+                page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                page.wait_for_timeout(8000)  # LinkedIn feed needs time to populate
+
+                post_count_before = len(all_leads)
+                page_text = _playwright_scroll_and_read(page, max_hours=max_hours)
+                _collect_leads(page_text, url, all_leads, seen_keys, max_hours, post_count_before)
+
+            except Exception as exc:
+                print(f"  Query failed: {exc}")
+
+        session.close()
+
+
+def _bridge_scroll_and_read(client: Any, tab_id: str, max_hours: int, max_passes: int = 30) -> str:
+    """
+    Scroll the LinkedIn feed tab via the Chrome MCP bridge, returning full body text.
+    Uses the new CSP-safe page.scroll_feed + page.body_text extension methods.
+    """
+    target_minutes = max_hours * 60
+    max_stagnant = 6
+    prev_length = 0
+    stagnant = 0
+    best_text = ""
+
+    for pass_num in range(max_passes):
+        try:
+            client.scroll_feed(tab_id, pixels=3000)
+        except Exception:
+            pass
+        time.sleep(3.0)
+
+        try:
+            client.expand_posts(tab_id)
+        except Exception:
+            pass
+
+        try:
+            text = client.get_body_text(tab_id)
+        except Exception:
+            text = ""
+
+        if len(text) > len(best_text):
+            best_text = text
+
+        oldest = _oldest_post_minutes(text)
+        new_length = len(text)
+        grew = new_length > prev_length + 200
+        stagnant = 0 if grew else stagnant + 1
+        prev_length = new_length
+
+        print(f"  [scroll {pass_num+1}] page_len={new_length} oldest={oldest}m stagnant={stagnant}")
+
+        if oldest >= target_minutes:
+            break
+        if stagnant >= max_stagnant:
+            print(f"  Scroll stopped: no new content after {max_stagnant} passes (oldest={oldest}m)")
+            break
+
+    return best_text
+
+
+def _scan_via_bridge(
+    queries: List[str],
+    max_hours: int,
+    ws_url: str,
+    all_leads: List[LinkedInPostLead],
+    seen_keys: set,
+) -> None:
+    """Scan using the Chrome MCP bridge (existing logged-in Chrome, no CDP needed)."""
+    from .chrome_mcp_client import ChromeMcpClient, ChromeMcpError
+
+    print("[bridge] Connecting to Chrome MCP bridge at", ws_url)
+    try:
+        client = ChromeMcpClient(ws_url=ws_url)
+        client.connect()
+    except Exception as exc:
+        print(f"[bridge] Could not connect to Chrome MCP bridge: {exc}")
+        print("[bridge] Make sure the Chrome MCP server is running:")
+        print("         python -m job_apply_bot chrome-mcp-server")
+        return
+
+    try:
+        for query in queries:
+            print(f"\nSearching posts for: {query!r}")
+            url = _search_url(query)
+
+            # Find or create a tab for LinkedIn
+            try:
+                tabs = client.list_tabs()
+                linkedin_tab = next(
+                    (t for t in tabs if "linkedin.com" in t.url and "login" not in t.url),
+                    None,
+                )
+                if linkedin_tab:
+                    tab_id = linkedin_tab.id
+                    client.navigate(tab_id, url)
+                else:
+                    result = client.request("tabs.create", url=url)
+                    tab_id = str(result.get("payload", {}).get("id", ""))
+            except Exception as exc:
+                print(f"  Could not open LinkedIn tab: {exc}")
+                continue
+
+            time.sleep(5.0)  # let feed render
+
+            # Check we're not on a login wall
+            try:
+                current_url_text = client.get_body_text(tab_id)[:500]
+                if "Sign in" in current_url_text and "Feed post" not in current_url_text:
+                    print("  WARNING: LinkedIn tab appears to be on login page — not logged in.")
+                    continue
+            except Exception:
+                pass
+
+            post_count_before = len(all_leads)
+            page_text = _bridge_scroll_and_read(client, tab_id, max_hours=max_hours)
+            _collect_leads(page_text, url, all_leads, seen_keys, max_hours, post_count_before)
+
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
+
+
+def _collect_leads(
+    page_text: str,
+    url: str,
+    all_leads: List[LinkedInPostLead],
+    seen_keys: set,
+    max_hours: int,
+    post_count_before: int,
+) -> None:
+    raw_posts = _parse_posts_from_text(page_text, url)
+    oldest_age = 0
+    for raw in raw_posts:
+        key = raw.get("text", "")[:120]
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        lead = _analyze_post(raw, max_hours=max_hours)
+        all_leads.append(lead)
+        if lead.age_minutes < 9999:
+            oldest_age = max(oldest_age, lead.age_minutes)
+
+    age_label = f"{oldest_age}m" if oldest_age else "unknown"
+    added = len(all_leads) - post_count_before
+    print(f"  Found {added} posts | oldest {age_label}")
+
+
+def _cdp_available(settings: Any) -> bool:
+    """Quick TCP check — is Chrome's remote debug port reachable?"""
+    import socket
+    cdp_url = getattr(settings, "browser_cdp_url", "") or ""
+    if not cdp_url:
+        return False
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(cdp_url)
+        host = parsed.hostname or "127.0.0.1"
+        port = parsed.port or 9222
+        with socket.create_connection((host, port), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
 def scan_linkedin_posts(
     queries: Optional[List[str]] = None,
     max_hours: int = MAX_HOURS,
@@ -559,8 +858,11 @@ def scan_linkedin_posts(
 ) -> List[LinkedInPostLead]:
     """
     Scan LinkedIn feed posts for AI/ML C2C job opportunities.
-    Uses Playwright for proper scrolling (bypasses LinkedIn's custom scroll container).
-    Returns a list of LinkedInPostLead objects, both eligible and skipped.
+
+    Priority:
+      1. Playwright via CDP  — Chrome is running with --remote-debugging-port=9222
+      2. Chrome MCP bridge   — Chrome extension is connected (no CDP needed)
+      3. Playwright via profile — last resort, only if no bridge available
     """
     if queries is None:
         queries = DEFAULT_SEARCH_QUERIES
@@ -570,56 +872,28 @@ def scan_linkedin_posts(
     all_leads: List[LinkedInPostLead] = []
     seen_keys: set = set()
 
-    with sync_playwright() as playwright:
-        session = open_browser_session(playwright, settings)
-        page = session.context.new_page()
+    # ── Path 1: CDP available → Playwright on existing logged-in Chrome ──────
+    if _cdp_available(settings):
+        print("[scan] CDP available — using existing Chrome via Playwright.")
+        _scan_via_playwright(queries, max_hours, settings, all_leads, seen_keys)
+        if all_leads:
+            eligible = [l for l in all_leads if l.eligible]
+            print(f"\nTotal posts scanned: {len(all_leads)}")
+            print(f"Eligible job leads: {len(eligible)}")
+            return all_leads
 
-        for query in queries:
-            print(f"\nSearching posts for: {query!r}")
-            url = _search_url(query)
+    # ── Path 2: Chrome MCP bridge (no CDP needed) ────────────────────────────
+    print("[scan] Trying Chrome MCP bridge...")
+    _scan_via_bridge(queries, max_hours, ws_url, all_leads, seen_keys)
+    if all_leads:
+        eligible = [l for l in all_leads if l.eligible]
+        print(f"\nTotal posts scanned: {len(all_leads)}")
+        print(f"Eligible job leads: {len(eligible)}")
+        return all_leads
 
-            try:
-                page.goto(url, wait_until="domcontentloaded", timeout=20000)
-                page.wait_for_timeout(5000)  # let feed render
-
-                # Warn if not logged in (LinkedIn redirects to authwall)
-                current_url = page.url
-                if "authwall" in current_url or "login" in current_url or "checkpoint" in current_url:
-                    print(f"  WARNING: LinkedIn redirected to login page ({current_url}).")
-                    print(f"  The Playwright browser is not logged into LinkedIn.")
-                    print(f"  To fix: set JOB_BOT_CDP_URL=http://127.0.0.1:9222 in .env and")
-                    print(f"  launch Chrome with --remote-debugging-port=9222, or run")
-                    print(f"  'linkedin-login' to create a LinkedIn-specific browser profile.")
-                    continue
-
-                post_count_before = len(all_leads)
-
-                # Scroll until posts >= max_hours old appear
-                page_text = _playwright_scroll_and_read(page, max_hours=max_hours)
-                raw_posts = _parse_posts_from_text(page_text, url)
-
-                new_this_pass = 0
-                oldest_age = 0
-                for raw in raw_posts:
-                    key = raw.get("text", "")[:120]
-                    if key in seen_keys:
-                        continue
-                    seen_keys.add(key)
-
-                    lead = _analyze_post(raw, max_hours=max_hours)
-                    all_leads.append(lead)
-                    new_this_pass += 1
-                    if lead.age_minutes < 9999:
-                        oldest_age = max(oldest_age, lead.age_minutes)
-
-                age_label = f"{oldest_age}m" if oldest_age else "unknown"
-                added = len(all_leads) - post_count_before
-                print(f"  Found {added} posts | oldest {age_label}")
-
-            except Exception as exc:
-                print(f"  Query failed: {exc}")
-
-        session.close()
+    # ── Path 3: Dedicated linkedin-profile browser (login persists) ──────────
+    print("[scan] Opening dedicated LinkedIn browser (login saved for future runs).")
+    _scan_via_linkedin_profile(queries, max_hours, settings, all_leads, seen_keys)
 
     eligible = [l for l in all_leads if l.eligible]
     print(f"\nTotal posts scanned: {len(all_leads)}")

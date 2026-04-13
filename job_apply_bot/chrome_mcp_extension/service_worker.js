@@ -262,6 +262,126 @@ async function handleBridgeMessage(message) {
     }
   }
 
+  // ── page.scroll_feed ─────────────────────────────────────────────────────
+  // Scrolls LinkedIn's custom feed container (bypasses CSP — pre-compiled func).
+  if (type === "page.scroll_feed") {
+    const numericTabId = normalizeTabId(tabId);
+    const pixels = Number(message.pixels || 3000);
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: numericTabId },
+        world: "MAIN",
+        func: (px) => {
+          var selectors = [
+            ".scaffold-finite-scroll__content",
+            ".core-rail",
+            "main",
+          ];
+          for (var i = 0; i < selectors.length; i++) {
+            var el = document.querySelector(selectors[i]);
+            if (el && el.scrollHeight > el.clientHeight + 10) {
+              el.scrollBy(0, px);
+              return selectors[i];
+            }
+          }
+          document.body.scrollBy(0, px);
+          window.scrollBy(0, px);
+          return "body/window";
+        },
+        args: [pixels],
+      });
+      return {
+        type: "page.scroll_feed.result",
+        id: id || null,
+        tabId,
+        ok: true,
+        payload: { container: results?.[0]?.result ?? null },
+      };
+    } catch (err) {
+      return {
+        type: "page.scroll_feed.result",
+        id: id || null,
+        tabId,
+        ok: false,
+        payload: { error: String(err) },
+      };
+    }
+  }
+
+  // ── page.body_text ────────────────────────────────────────────────────────
+  // Gets full document.body.innerText without any char limit (bypasses CSP).
+  if (type === "page.body_text") {
+    const numericTabId = normalizeTabId(tabId);
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: numericTabId },
+        world: "MAIN",
+        func: () => document.body.innerText || "",
+      });
+      return {
+        type: "page.body_text.result",
+        id: id || null,
+        tabId,
+        ok: true,
+        payload: { text: results?.[0]?.result ?? "" },
+      };
+    } catch (err) {
+      return {
+        type: "page.body_text.result",
+        id: id || null,
+        tabId,
+        ok: false,
+        payload: { text: "", error: String(err) },
+      };
+    }
+  }
+
+  // ── page.expand_posts ─────────────────────────────────────────────────────
+  // Clicks all "see more" buttons in LinkedIn feed (bypasses CSP).
+  if (type === "page.expand_posts") {
+    const numericTabId = normalizeTabId(tabId);
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: numericTabId },
+        world: "MAIN",
+        func: () => {
+          var selectors = [
+            'button[aria-label*="see more"]',
+            'button[aria-label*="See more"]',
+            'span[role="button"]',
+            ".feed-shared-inline-show-more-text__see-more-less-toggle",
+            ".see-more-less-html__link",
+          ];
+          var clicked = 0;
+          selectors.forEach(function (sel) {
+            document.querySelectorAll(sel).forEach(function (btn) {
+              var t = (btn.innerText || btn.textContent || "").trim().toLowerCase();
+              if (t === "…more" || t === "...more" || t.includes("see more") || t.includes("show more")) {
+                try { btn.click(); clicked++; } catch (e) {}
+              }
+            });
+          });
+          return clicked;
+        },
+      });
+      return {
+        type: "page.expand_posts.result",
+        id: id || null,
+        tabId,
+        ok: true,
+        payload: { clicked: results?.[0]?.result ?? 0 },
+      };
+    } catch (err) {
+      return {
+        type: "page.expand_posts.result",
+        id: id || null,
+        tabId,
+        ok: false,
+        payload: { clicked: 0, error: String(err) },
+      };
+    }
+  }
+
   if (type === "page.execute_js") {
     const code = String(message.code || "");
     const numericTabId = normalizeTabId(tabId);
